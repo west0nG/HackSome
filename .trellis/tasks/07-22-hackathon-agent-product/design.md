@@ -79,7 +79,26 @@ v1 已确认采用 Python + `asyncio` 管理本地 `codex exec` 子进程：
 
 ### `ArtifactStore`
 
-使用本地文件保存每次运行的输入、中间证据、结构化产物和日志。v1 不需要数据库。每个阶段的输出都先校验，再成为下一阶段的输入；原始来源和被淘汰结果也保留，避免只看到最后结论。
+使用本地文件保存每次运行的输入、中间证据、共享工作文档和日志。v1 不需要数据库，也不要求把一个自然文档包装成复杂的 artifact package。
+
+它管理两类不同文件：
+
+- **账本型文件**：原始题目、Evidence、Decision、Elimination 和运行事件。这些内容追加或产生新版本，不能静默覆盖。
+- **Living Documents**：Problem、Idea、后续 PRD 和 Pitch 等可以由多个 Agent 持续发展的 Markdown 文件。第一次由一个 Agent 创建，后续 Agent 读取同一路径并修改正文。
+
+Evidence 不要求先混成一个总文件。S2 中每个 Research Agent 创建一份独立、完成后不可改写的研究文档；后续 Agent 通过文档路径和局部证据编号引用它。只有多个 Agent 同时发展同一份 Living Document 时才需要 Editor 汇合。
+
+结构化 JSON/JSONL 用于程序必须稳定判断的状态与引用；Markdown 用于本来就需要被反复阅读和编辑的文档。共享文档的修改历史由运行记录或版本快照保存，不要求文档正文携带一层 package envelope。
+
+Living Document 的并行写入协议为：
+
+1. Orchestrator 固定当前共享文件的 base revision。
+2. 多个并行 Agent 都读取这一版正文，各自返回修改建议或 patch，不直接写 canonical 文件。
+3. 一个 Editor Agent 读取 base revision 和全部修改建议，处理冲突、重复与互补内容。
+4. Editor 只写回一次新的 canonical revision，并记录采用、合并或拒绝了哪些建议。
+5. 下一轮 Agent 统一读取新的 revision。
+
+若一个阶段只有单个 Agent，允许它直接更新 Living Document；“单一 Editor”规则只用于同一轮存在多个并行修改者的情况。
 
 ### `RunState`
 
@@ -93,6 +112,15 @@ v1 已确认采用 Python + `asyncio` 管理本地 `codex exec` 子进程：
 - 已完成产物的位置
 - 下一步可执行动作
 
+### Challenge Brief 的两个读取视图
+
+S0 保存一份完整、不可静默覆盖的 `ChallengeBrief`，但后续 Agent 不默认读取全部字段。控制器从同一份事实生成两个视图：
+
+- `DiscoveryView`：主题、要解决的领域、题目明确指定的人群以及与需求研究直接相关的非技术边界。Audience、Research、Problem 和首轮 Idea Agent 只读这个视图。
+- `ComplianceView`：强制技术、Sponsor 要求、提交格式、时间限制、交付物和其他合规条件。只有 Idea 草案形成后的技术检查读取。
+
+这样落实“先找问题，再检查技术”，同时不复制出两套可能漂移的 Challenge 真相；两个视图都从同一份 Brief 生成。
+
 ### `ConcurrencyLimiter`
 
 只控制同一时间运行多少个 Codex 任务，避免本机资源失控。它不限制候选总数，也不负责把结果筛成固定数量。
@@ -105,7 +133,7 @@ v1 至少定义五类可校验产物：
 2. `ProblemCard`：人群、真实场景、问题、用户原话或直接描述、来源、替代办法、假设、状态与判断依据。
 3. `IdeaCard`：使用者、具体问题、完整使用过程、核心功能、现有办法为何不足、技术的真实作用、引用的问题卡。
 4. `EliminationRecord`：被淘汰对象、发生阶段、触发的门槛、证据和原因。
-5. `EvidenceRecord`：稳定的 evidence id、平台、URL、日期、原文摘录、上下文、关联人群、Research Agent 的主张，以及独立复核状态与理由。
+5. `EvidenceRecord`：位于独立研究文档中的证据条目，包含文档内局部 id、平台、URL、日期、原文摘录、上下文、关联人群和 Research Agent 的暂定主张。跨文档稳定引用使用“文件路径 + 局部 id”；后续复核结果另存并引用它，不回写原研究文档。
 
 准确字段和保存格式将在实现规划中确定。Schema 校验失败属于可重试的执行失败，不等同于内容未通过质量门槛。
 
@@ -128,7 +156,7 @@ v1 至少定义五类可校验产物：
 
 ## 7. 当前待确认的技术选择
 
-1. 结构化产物使用纯 JSON，还是采用便于人读写的 Markdown + front matter，并额外生成 JSON 索引。
+1. 哪些阶段输出采用 JSON/JSONL 账本，哪些直接采用共享 Markdown 文档。
 2. 默认并发数、阶段超时、重试次数和整次运行预算。
 3. 第一版 CLI 的输入方式、进度显示和恢复命令。
 
