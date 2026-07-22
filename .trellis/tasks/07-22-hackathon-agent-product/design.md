@@ -86,19 +86,24 @@ v1 已确认采用 Python + `asyncio` 管理本地 `codex exec` 子进程：
 - **账本型文件**：原始题目、Evidence、Decision、Elimination 和运行事件。这些内容追加或产生新版本，不能静默覆盖。
 - **Living Documents**：Problem、Idea、后续 PRD 和 Pitch 等可以由多个 Agent 持续发展的 Markdown 文件。第一次由一个 Agent 创建，后续 Agent 读取同一路径并修改正文。
 
-Evidence 不要求先混成一个总文件。S2 中每个 Research Agent 创建一份独立、完成后不可改写的研究文档；后续 Agent 通过文档路径和局部证据编号引用它。只有多个 Agent 同时发展同一份 Living Document 时才需要 Editor 汇合。
+Evidence 不要求先混成一个总文件。S2 中每个 Research Agent 创建一份独立、完成后不可改写的研究文档；后续 Agent 通过文档路径和局部证据编号引用它。
 
-结构化 JSON/JSONL 用于程序必须稳定判断的状态与引用；Markdown 用于本来就需要被反复阅读和编辑的文档。共享文档的修改历史由运行记录或版本快照保存，不要求文档正文携带一层 package envelope。
+结构化 JSON/JSONL 用于程序必须稳定判断的全局状态、短集合、索引和追加事件；Markdown 用于需要被反复阅读和编辑的长文档。每份长 Markdown 顶部带小型 YAML front matter，正文不再复制到 JSON sidecar。共享文档的修改历史由运行记录或版本快照保存，不要求额外 package envelope。
 
-Living Document 的并行写入协议为：
+所有长文档 front matter 至少包含：
 
-1. Orchestrator 固定当前共享文件的 base revision。
-2. 多个并行 Agent 都读取这一版正文，各自返回修改建议或 patch，不直接写 canonical 文件。
-3. 一个 Editor Agent 读取 base revision 和全部修改建议，处理冲突、重复与互补内容。
-4. Editor 只写回一次新的 canonical revision，并记录采用、合并或拒绝了哪些建议。
-5. 下一轮 Agent 统一读取新的 revision。
+- `schema_version`
+- `artifact_id` 与 `artifact_type`
+- `run_id` 与 `stage`
+- 阶段专用 `status`
+- `revision`
+- `created_by_session` 与最近一次 `updated_by_session`
+- `source_refs`
+- 可选的 `supersedes`
 
-若一个阶段只有单个 Agent，允许它直接更新 Living Document；“单一 Editor”规则只用于同一轮存在多个并行修改者的情况。
+Orchestrator 在接受 Agent 产物前解析 front matter，并校验必要字段、状态枚举、来源路径和阶段要求的正文标题。格式错误属于可重试的执行失败，不等同于内容被质量门槛淘汰。`codex exec --output-schema` 只返回轻量完成信封，例如运行状态和写入文件路径，不重复返回正文。
+
+写入所有权保持简单：每个并行任务都有唯一输出路径；同一份 Living Document 同一时间只有一个授权 Writer，后续 Agent 等上一 revision 完成后再串行修改。v0.1 不提供并发写入同一文件或自动合并内容的机制。
 
 ### `RunState`
 
@@ -117,7 +122,7 @@ Living Document 的并行写入协议为：
 S0 保存一份完整、不可静默覆盖的 `ChallengeBrief`，但后续 Agent 不默认读取全部字段。控制器从同一份事实生成两个视图：
 
 - `DiscoveryView`：主题、要解决的领域、题目明确指定的人群以及与需求研究直接相关的非技术边界。Audience、Research、Problem 和首轮 Idea Agent 只读这个视图。
-- `ComplianceView`：强制技术、Sponsor 要求、提交格式、时间限制、交付物和其他合规条件。只有 Idea 草案形成后的技术检查读取。
+- `ComplianceView`：强制技术、Sponsor 要求、提交格式、时间限制、交付物和其他合规条件。只有 Idea 草案形成后的 S8 及最终确定性规则检查读取。
 
 这样落实“先找问题，再检查技术”，同时不复制出两套可能漂移的 Challenge 真相；两个视图都从同一份 Brief 生成。
 
@@ -165,7 +170,22 @@ v1 至少定义五类可校验产物：
 - Research Agent 通过 Codex 原生网页搜索收集材料。
 - Prompt 明确优先 GitHub Issues/Discussions 与 Reddit 的自然讨论，但根据人群选择更合适的平台，不设置平台配额。
 - 搜索阶段保留原始 URL、日期、摘录和上下文，不只输出综合结论。
-- Evidence Verifier 使用独立 Codex 任务重新访问来源，不继承 Research Agent 的结论上下文，防止同一个 Agent 自证。
+- 每份 Research 文档对应一个由独立 Codex session 生成的 Verification 文档。Verifier 不继承 Research Agent 的会话，只读取复核所需的研究文档，并重新访问其中每个来源。
+- Research 和 Verification 文档彼此分开且都不被下游改写。出现部分支持、冲突或模糊判断时才启动第二个 Verifier，结果另存；不生成覆盖这些差异的总复核文档。
+- Problem 文档的作者与 Problem Gateway 是两个独立判断主体。作者只能形成问题文档；Gateway 使用新 session 根据绝对门槛判断通过、补证或淘汰，不能由作者自我批准。
+- S3、S4、S5 不做 session 合并：Evidence Verifier、Problem Writer、Problem Gateway 分别由新 Codex session 承担，并通过不可静默改写的文件交接。
+- S4 对每个 Audience 默认并行运行 3 个同输入的 Problem Writer，数量作为运行配置开放。每个 Writer 使用独立 session 和独立输出目录；它们不共享会话、不预分配方向，也不合并结果。
+- S5 默认每份 Problem 文档使用一个 Gateway session。`pass` 直接继续，`needs_evidence` 触发有边界的研究回路；`reject_candidate` 必须由第二个看不到首份结论的新 session 在同一失败门槛上确认，才能写入最终淘汰记录。
+- 每个 Problem 最多执行一次内容补证。补证后新的 Gateway 判断仍有分歧时直接写入淘汰记录，不启动第三名裁决者，保证无人值守流程能够停止。
+- S6 对每个通过的 Problem 默认并行运行 5 个同输入的 Idea Generator，数量可配置。每个 Generator 使用独立 session 和独立目录，输出零到多份 Idea Draft；本阶段不读取竞品或 Sponsor 技术，不执行合并与放行。
+- S6 后不运行 Consolidate Agent。Orchestrator 只记录所有 Idea Draft 的路径并逐一派往竞品研究；不做语义相似度判断，也不因重复增加一个中央汇总写入点。
+- S7 为每份 Idea Draft 创建一个独立 Competitor Research session，并让所有 Idea 的任务并发执行。若后续 Reviewer 指出明确缺口，可再创建一个定向 session；每次研究各写一份不可静默覆盖的文档，不修改 Idea 正文。
+- S8 Idea Revision 与 S9 Idea Red Team 使用不同 Codex session。S8 发展 Idea 文档；S9 只读取完成的 Idea revision 及必要事实，输出独立 Red Team 文档，不编辑被评对象。
+- S9 的首要测试是“用户是否能真实感到价值”与“价值是否通过一条包含真实输入、处理、结果或动作的 User Flow 被交付”，而不是检查页面数量或文案是否完整。
+- S9 还检查用户相较现有办法是否有采用理由，以及 Idea 是否忠于已通过的 Problem。工程可行性与黑客松时间预算交给后续 Build Feasibility Agent；v0.1 不设置 Challenge Compliance Agent，确定性的比赛硬规则由 Orchestrator 检查。
+- S9 可以把局部可修复缺陷返回 S8 一次；缺少核心价值、真实 User Flow 或 Problem 忠实度则直接淘汰。修改后的 revision 由另一个不读取首份 Red Team 结论的新 session 重审，第二次未通过即停止该 Idea 分支。
+- S10 为每个通过 S9 的 Idea 创建独立 Build Feasibility session。它可以提出一次不破坏核心价值与 User Flow 的范围缩减；S8 生成新 revision 后必须重新经过新的 S9 与 S10。缩减后仍不可行或只能靠假实现完成时淘汰。
+- S11 是确定性 Renderer，不启动 Codex session。它按稳定文件路径或创建 id 遍历最终状态，生成无排名 `idea-report.md`；正文只能引用已校验文档中的字段和链接，不能生成新的产品判断。
 - v0.1 不开发独立爬虫、搜索索引或长期监听系统。只有真实运行证明原生搜索在覆盖率、可访问性或可复现性上不足时，后续版本才增加相应基础设施。
 
 ## 9. v0.1 验证方式

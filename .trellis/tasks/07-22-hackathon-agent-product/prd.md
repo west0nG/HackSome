@@ -62,18 +62,48 @@
 - 每个 Audience 建立一条独立研究分支。v0.1 首轮默认同时运行 3 个彼此隔离的 Research Agent；数量可配置，它只是一次执行批次，不是证据或问题的产出配额。
 - 同一分支内的 Research Agent 读取完全相同的 Audience、`DiscoveryView` 和研究规则，不预设痛点方向，也不强制彼此寻找不同类型的问题。多个独立 Agent 从不同材料发现同一问题时，这种重复可以增强可信度，不能因为内容相似就自动删除。
 - Research Agent 只提交候选证据、查询与访问记录、反例和仍待补充的缺口；它不创建正式 Problem Card、不判断问题是否过线，也不提出产品 Idea。
-- 每个 Research Agent 独立写一份 `research/<audience-id>/<researcher-id>.md`。S2 不设置 Research Editor，也不把三份结果先揉成一份“统一理解”；下游阶段直接读取该 Audience 下的整组研究文档。
+- 每个 Research Agent 独立写一份 `research/<audience-id>/<researcher-id>.md`；下游阶段直接读取该 Audience 下的整组研究文档。
 - 每份研究文档完整保留自己的来源、原文、查询记录、暂定主张、反例和搜索缺口，并在写完后保持不变。不同文档发现相同问题时仍全部保留；后续归纳阶段可以引用它们之间的相互印证，但不能改写原研究记录。
 - 第一轮结束后，Orchestrator 只记录这组文档已经完成，不做语义合并或筛选。若后续证据复核或问题归纳发现明确缺口，再围绕该缺口启动有边界的追加研究并产生新文档；如果新搜索已不再增加实质材料，或确实没有找到证据，该人群分支就停止。合法的空结果优于编造问题。
 - 研究原料至少包含：具体人群、来源 URL、用户原话或直接描述、上下文、候选问题主张、当前替代办法、反例或不确定项，以及产生它的查询记录；正式的问题卡要等独立证据复核和问题归纳之后再创建。
-- Research Agent 提交的证据不能直接视为有效。独立的 Evidence Verifier 必须重新打开来源，并把证据标记为“支持”“部分支持”“不支持”或“无法访问”；只有验证结果足够支持的问题主张才能进入问题门槛。
+- Research Agent 提交的证据不能直接视为有效。每份研究文档由一个未参与该研究的新 Codex session 复核，并产生对应的 `verification/<audience-id>/<researcher-id>/verifier-001.md`；它不修改原研究文档，也不与其他复核结果混成总文档。
+- Verifier 必须重新打开研究文档中的每个来源，逐条检查 URL 是否可访问、摘录是否准确、上下文和人群是否匹配、暂定主张是否被材料真正支持，并标记为“支持”“部分支持”“不支持”或“无法访问”。
+- 如果第一份复核文档留下部分支持、冲突或无法明确判断的证据，再启动另一个独立 Verifier，并新增 `verifier-002.md`。两份复核文档都保留；系统不通过覆盖旧判断或简单多数投票来制造确定性，仍无法解决的分歧继续标为不确定。
+- Verifier 只复核已有材料，不替 Research Agent 搜索替代证据、不生成 Problem Card、不执行问题门槛，也不提出产品 Idea。后续阶段同时读取研究文档及其全部复核文档；只有得到足够支持的材料才能作为问题主张的正面依据。
+- 必须保留一个负责产出 Problem 文档的 Agent，以及一个独立的 Problem Gateway。前者负责把材料写成可供后续使用的问题文档，但不能决定自己的问题是否过线；后者使用新的 Codex session 和统一绝对门槛，只负责通过、要求补证或淘汰。Problem Writer 与 Gateway 不得合并为同一个判断主体。
+- v0.1 明确保留 S3、S4、S5 三个阶段和三个独立判断边界：S3 只复核证据并输出 Verification 文档；S4 使用新的 Agent 读取已复核材料并输出 Problem 文档；S5 再使用新的 Agent 执行 Gateway。S3 不兼任 Problem Writer，S4 也不能批准自己产出的问题。
+- S4 对每个 Audience 默认启动 3 个互相隔离的 Problem Writer，数量可配置。它们读取相同的完整 Research 与 Verification 文档，不预设问题方向、不强制彼此差异，也不读取其他 Writer 的产物；每个 Writer 可以输出零到多份独立 Problem 文档。
+- S4 不做排名、限额、合并或过线判断。不同 Writer 得出相似问题时仍分别保留；相似度本身既不是淘汰理由，也不代表问题已经通过 S5。
 - 缺少外部证据的问题先标记为“待验证”，并获得一轮额外搜索机会；再次搜索仍找不到真实用户表述或现有替代办法时才淘汰，不因第一次证据不足立即误杀。
 - v1 暂定的问题准入门槛是：问题反复发生或单次后果严重；用户已为它付出时间、金钱或采用麻烦的替代办法；软件能带来实质改善而不只是增加一个界面。满足门槛的问题全部继续，不做相对排名。
+- S5 对每份 Problem 文档先启动一个独立 Gateway，并单独保存判断文档。结果只有“通过”“需要补证”或“候选淘汰”：通过项直接进入 Idea 生成；需要补证必须返回可执行的搜索缺口并进入一次有边界的 S2 → S3 → S4 回路；候选淘汰不能立即生效。
+- 候选淘汰必须再由第二个看不到第一次结论的新 Gateway 复核。只有两个 Gateway 都指出同一个明确门槛失败时才真正淘汰；判断不一致时保留为待确认，不能用简单多数或第一次判断误杀。
+- Gateway 判断不一致时，如果该问题尚有补证预算，则根据分歧中的具体缺口执行唯一一次定向补证；补证完成并用新 session 重判后仍存在 Gateway 分歧，直接淘汰该问题。v0.1 不增加第三名裁决者，也不让不确定分支持续挂起。
 - 上述门槛是需要用真实运行结果校准的初始假设；后续可根据误杀与误放案例调整，不作为不可修改的永久规则。
 - 每个通过门槛的问题可以展开成多个产品 Idea，不要求只接受第一个或最直接的答案。Agent 应先理解用户完整流程，再考虑预防问题、自动完成步骤、辅助判断、减少交接或帮助恢复等不同介入位置。
 - 每个问题产生的 Idea 数量不预设；当继续生成只得到明显重复方案时停止。所有独立成立并通过后续门槛的 Idea 均可保留。
+- S6 对每个通过 S5 的 Problem 默认并行启动 5 个互相隔离的 Idea Generator，数量可配置。它们读取相同的 Problem、Gateway 通过记录和已验证证据，不预设产品方向、不强制彼此差异，也不读取其他 Generator 的输出。
+- 每个 Idea Generator 可以输出零到多份独立 Idea Draft。5 是首轮并行计算量，不是 Idea 配额；S6 不做排名、限额、合并或质量放行。
+- 第一轮 Idea Generator 只根据人群、问题、证据和用户现有流程构思产品，不读取竞品研究或 `ComplianceView`，也不为了 Sponsor 技术反向改变需求。每份 Draft 必须描述真实输入、实际处理和可用结果或动作组成的端到端核心流程，不能只给产品名或前端页面概念。
+- S6 之后不设置 Idea Consolidate / 去重 Agent。所有独立 Idea Draft 直接进入竞品研究；Orchestrator 只维护文件路径索引，不理解、合并或删除语义相似的 Draft。相似方案后续分别研究和判断。
 - 产品方案采用两步顺序：先只依据用户、问题和现有工作流程独立生成第一批 Idea；随后再研究已有产品、竞品和类似项目，检查重复、缺口与用户切换理由，并据此修改、合并或淘汰 Idea。
 - 不在第一轮生成前大量阅读竞品，避免过早被现有产品形态锚定；也不允许跳过后续竞品检查而直接进入构建。
+- S7 为每份 Idea Draft 首轮启动 1 个独立 Competitor Researcher；所有 Idea 的研究任务可以同时运行。Researcher 单独写入竞品研究文档，不修改 Idea、不执行质量判断，也不因找到相似产品而直接淘汰。
+- 竞品研究必须覆盖直接竞品、间接替代办法、相关开源项目、用户当前 workaround、用户采用或放弃现有产品的原因，并保留 URL、原文或可核实事实、查询记录、反例和覆盖缺口。
+- 如果后续 Idea Reviewer 指出一个明确的竞品覆盖缺口，S7 可以为该 Idea 增加 1 个定向 Researcher 并产生第二份独立文档；v0.1 不进行无边界的重复搜索，也不把两份结果揉成统一报告。
+- 竞品研究之后必须把 Idea 修改与 Idea 放行拆成两个阶段。S8 的 Idea Revision Agent 负责基于竞品材料继续发展 Idea 文档；S9 使用一个全新的独立 Codex session 作为 Idea Red Team，不能让修改者批准自己的方案。
+- Idea Red Team 的目的不是润色或补全方案，而是对“Idea 作为一个产品 Idea 是否成立”进行对抗性判断。它至少必须回答：目标用户能否在真实使用中明确感受到产品价值；这份价值是否由一条真实 User Flow 交付，而不是功能清单、页面跳转或抽象的效率承诺。
+- 真实 User Flow 至少需要说明触发点、用户提供的真实输入、产品实际完成的处理、用户获得的结果或现实动作，以及价值被用户感知的时刻。Red Team 单独输出评审文档，不直接改写 Idea Card。
+- S9 Red Team 的范围保持在产品层面：除上述两项外，还要检查 User Flow 是否真的产生所声称的价值、用户相对当前办法是否有实际采用理由，以及 Idea 是否仍忠于已通过的 Problem 而没有为了方案偷偷改题。
+- S9 不判断工程实现难度、黑客松时间内能否完成、Sponsor 技术是否必要或比赛规则是否满足。工程与时间可行性在 Red Team 通过后由独立的 Build Feasibility Agent 检查；v0.1 不设置单独的 Challenge Compliance Agent。
+- `ComplianceView` 中能够确定性判断的硬性规则、必需字段和交付物由 Orchestrator 在最终输出前检查。S8 仍需在 Idea Card 中如实说明 Sponsor 技术可能承担的作用，但不为“技术是否足够有意义”额外设置语义 Gateway。
+- S10 为每个通过 S9 的 Idea 启动一个独立 Build Feasibility session，判断它能否在给定黑客松时间、本地环境和可用依赖下做成真实端到端 Beta。评审不能把假数据、人工代替核心处理或只做界面展示视为可行实现。
+- S10 的结果为“可行”“可通过缩减实现”或“根本不可行”。只有在保留同一核心 User Flow 和用户价值的前提下，才允许返回 S8 缩减一次；缩减后的 Idea revision 必须依次经过新的 S9 Red Team 和新的 S10 Feasibility session。
+- 如果缩减必须破坏已通过的价值或 User Flow，直接淘汰；使用唯一一次缩减机会后仍不可行，也直接淘汰。S10 不比较 Idea，不按剩余时间或名额做相对筛选。
+- S11 不调用 Agent。Orchestrator 使用确定性代码生成 `idea-report.md`：保留全部最终通过的 Idea，不排名、不限数量；每项链接回 Problem、Research、Verification、竞品、Red Team、Feasibility 和相关 revision，独立 Idea Card 仍是事实源。
+- `idea-report.md` 同时包含淘汰附录，记录候选在何阶段、因哪条明确理由被淘汰。报告只能抽取和排版已有字段，不能重新解释、润色或改变结论；零个 Idea 通过时也必须生成合法报告并说明完整淘汰轨迹。
+- S9 的结果为“通过”“可修复”或“根本不成立”。没有可感知价值、没有真实 User Flow，或只有更换已通过的 Problem 才能成立时，直接淘汰；核心价值仍成立但 Flow 或产品机制存在明确局部缺陷时，才允许返回 S8 修改一次。
+- S8 根据首份 Red Team 文档产生一个新 Idea revision 后，必须由另一个全新 Red Team session 独立重审。任何返工后的 Red Team 都不读取之前的 Red Team 结论；新 revision 仍未通过时直接淘汰，不再因为同一原因继续循环。S10 触发的唯一一次范围缩减也必须走这条独立重审路径，但不会重新获得 S9 的产品修复机会。
 - Idea 阶段使用轻量 Idea Card，不提前扩写完整 PRD。每张卡必须回答：谁会使用；具体问题；从开始使用到获得结果的完整过程；核心功能；现有办法为何不足；所选技术实际承担什么作用（不需要特殊技术时也要明确说明）。
 - 问题证据沿用来源问题卡；商业模式、详细系统架构和完整页面清单不要求在 Idea 阶段完成。
 - 不把交付目标降格为只有前端外观的 Demo；Idea 必须能够发展为端到端的完整产品，至少有一条使用真实输入、真实处理并产生可用结果或动作的核心流程，而不是只展示假数据页面。
@@ -126,10 +156,9 @@
 - 共享 memory 必须有明确的事实来源、版本和读权限；Codex session history 只用于执行连续性，不自动成为跨 Agent 的事实来源。
 - 共享 memory 不要求全部封装成 artifact package。由既有输入逐步发展出来的 Problem、Idea、PRD、Pitch 等内容，可以直接是一个共享的 Markdown 文件：首个 Agent 创建，后续 Agent 读取同一个文件并持续修改。
 - 文件化 memory 分为两类：来源证据、原始题目和决策记录不能被静默覆盖；共享工作文档允许演进，但需要保留修改历史，使系统能够知道当前内容从哪一版发展而来。
-- 并行 Agent 不共享完整聊天记录；它们通过明确的共享文件协作。如何处理多个并行 Agent 同时修改同一文件，需要在 workflow 契约中明确，避免最后完成的写入覆盖其他修改。
-- 并行轮次采用“多人读、一次汇合写回”：多个 Agent 从同一个 Living Document revision 出发，分别提出修改；一个 Editor Agent 汇合这些修改并更新共享正文。下一轮再以更新后的正文为共同输入。
-- 并行 Agent 不直接同时写 canonical shared document。它们的临时建议不需要成为长期 package；完成汇合后可以只保留必要的修改记录、来源和被拒绝理由。
-- 上述 Editor 协议只适用于多个 Agent 同时发展同一份正文。像 S2 这样本来就可以各自成立的研究结果应保存为多份独立文档，不需要为了统一格式而先合并。
+- 并行 Agent 不共享完整聊天记录，并且必须拥有不同的输出文件路径。同一份 Living Document 在任何时刻只允许一个 Agent 写入；后续修改按 revision 串行执行。v0.1 不支持多个 Agent 同时修改同一个文件。
+- Research、Verification、Problem、Idea、竞品、Red Team 和 Feasibility 等长文档统一使用普通 Markdown 正文，并在顶部加入小型 YAML front matter，保存 id、artifact 类型、run、stage、status、revision、session 和来源路径。它不是额外 package；正文仍可直接阅读和修改。
+- v0.1 不为每份 Markdown 再保存内容重复的 JSON sidecar。`state.json`、任务索引、Audience 等短机器集合使用 JSON，追加式决策与事件使用 JSONL；Codex 的结构化返回只报告完成状态和写入路径，不复制文档正文。
 
 ## Acceptance Criteria for the Planning Phase
 
@@ -142,12 +171,28 @@
 - [ ] 定义 Idea 生成、证伪和切换的可执行机制，而不只是一组 prompt。
 - [ ] 为 Useful Idea 每个阶段定义输入、输出、Prompt、共享 memory 读取范围、session 边界、停止条件与回路。
 - [x] 明确 shared memory 以文件为中心，并允许普通共享文档在多轮 Agent 工作中持续演进；不要求把每个文档包装成独立 package。
-- [x] 明确并行修改 Living Document 时采用“相同基线并行提出修改 → 单一 Editor 汇合写回”的协议。
+- [x] 明确 v0.1 的并行任务各自拥有独立输出路径；同一 Living Document 只允许单 Writer 串行修改，不设计并行写入与合并机制。
+- [x] 明确长文档使用 Markdown + YAML front matter，运行状态与索引使用 JSON / JSONL，不为每份正文维护重复 JSON sidecar。
 - [x] 定义 Useful 路线中“具体人群”和“真实问题”的来源、证据格式与初始可信度规则。
 - [x] 明确 v0.1 的 Audience Expansion 不联网，只产出宽泛职业、人群和类型；外部搜索从 Problem Research 开始。
-- [x] 明确 S2 按 Audience 建立研究分支、首轮默认用 3 个同输入的独立 Research Agent 并行；每个 Agent 保留独立研究文档，不设汇合 Editor，并由后续发现的明确证据缺口决定是否追加搜索。
+- [x] 明确 S2 按 Audience 建立研究分支、首轮默认用 3 个同输入的独立 Research Agent 并行；每个 Agent 保留独立研究文档，不做汇总合并，并由后续发现的明确证据缺口决定是否追加搜索。
 - [x] 定义问题卡的“待验证 → 再搜索 → 通过/淘汰”状态与可检查标准。
 - [x] 明确 v1 优先搜索 GitHub、Reddit 等自然用户材料，并由独立 Agent 复核来源是否真正支持问题主张。
+- [x] 明确 S3 为每份研究文档创建一份独立复核文档，原研究记录不改写、不汇总覆盖；只有出现部分支持、冲突或模糊判断时才增加第二份复核文档。
+- [x] 明确 Problem 文档的产出者与 S5 Problem Gateway 必须分离；S5 使用独立 session，不能让 Problem Writer 自己批准自己的问题。
+- [x] 明确 S3 Evidence Verification、S4 Problem Writing 和 S5 Problem Gateway 均保留为独立阶段，不复用同一个 Agent session。
+- [x] 明确 S4 每个 Audience 默认使用 3 个同输入的独立 Problem Writer，各自产出独立文档，不强制方向差异、不做合并或固定数量筛选。
+- [x] 明确 S5 每个问题先由一个独立 Gateway 判断；通过直接继续、证据不足进入定向补证；淘汰必须由第二个盲审 Gateway 在同一明确门槛上确认。
+- [x] 明确 S5 最多补证一次；补证后 Gateway 仍不一致时直接淘汰，不增加第三名裁决者或无限挂起。
+- [x] 明确 S6 每个通过的问题默认使用 5 个同输入的独立 Idea Generator；每个可输出零到多份独立 Draft，不强制方向差异、不设最终数量配额。
+- [x] 删除独立的 Idea Consolidate 阶段；S6 的全部独立 Draft 直接进入竞品研究，Orchestrator 只建立路径索引，不做语义去重。
+- [x] 明确 S7 每份 Idea Draft 首轮使用 1 个独立 Competitor Researcher，所有 Idea 并行；只有后续指出明确覆盖缺口时才增加 1 个定向 Researcher，并保留独立研究文档。
+- [x] 将 Idea Revision 与 Idea Gateway 拆开；S9 使用独立 Red Team session，至少检验用户能否真实感知价值，以及该价值是否通过一条真实 User Flow 交付。
+- [x] 将 S9 Red Team 限定为产品成立性判断：价值、User Flow、价值交付、采用理由和 Problem 忠实度；工程可行性和比赛硬规则不混入该 Red Team。
+- [x] 不设置独立 Challenge Compliance Agent；硬性规则由 Orchestrator 根据 `ComplianceView` 做确定性检查，工程与时间可行性由单独 Build Feasibility Agent 处理。
+- [x] 明确 S10 每个 Idea 使用独立 Build Feasibility session；允许一次保留核心价值与 User Flow 的范围缩减，随后重走 S9 与 S10，仍不可行则淘汰。
+- [x] 明确 S11 仅由确定性代码生成无排名 `idea-report.md`；独立 Idea Card 是事实源，报告展示全部通过项、证据链接和淘汰轨迹，不调用总结 Agent。
+- [x] 明确 S9 根本不成立时直接淘汰；只有明确可修复的问题允许返回 S8 一次，并由全新 Red Team session 重审，第二次仍失败则淘汰。
 - [x] 定义一个 Useful Idea 何时足以代表端到端完整产品，而不只是前端 Demo。
 - [ ] 定义统一的绝对质量门槛，确保最终数量可变、只淘汰不合格项、不做固定配额或 Top-K 筛选。
 - [ ] 定义“一个 Idea → 动态分配约 5–6 个并行 Agent → 汇合”的任务结构、产物契约、冲突策略和下一轮触发方式。
