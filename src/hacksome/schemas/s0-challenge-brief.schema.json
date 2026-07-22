@@ -1,0 +1,267 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hacksome.local/schemas/s0-challenge-brief.schema.json",
+  "title": "S0 Challenge Brief",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "task_id",
+    "input_language",
+    "challenge_brief",
+    "discovery_view",
+    "compliance_view"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "input_language": {
+      "type": "string",
+      "minLength": 1
+    },
+    "challenge_brief": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_ref",
+        "title",
+        "summary",
+        "theme",
+        "problem_domains",
+        "explicit_audiences",
+        "judging_criteria",
+        "hard_constraints",
+        "allowed_technologies",
+        "required_technologies",
+        "sponsor_requirements",
+        "time_limit",
+        "submission_format",
+        "required_deliverables",
+        "other_rules",
+        "unknowns",
+        "conflicts"
+      ],
+      "properties": {
+        "source_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": ["string", "null"]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "theme": {
+          "type": ["string", "null"]
+        },
+        "problem_domains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "explicit_audiences": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "judging_criteria": {
+          "$ref": "#/$defs/sourced_facts"
+        },
+        "hard_constraints": {
+          "$ref": "#/$defs/sourced_facts"
+        },
+        "allowed_technologies": {
+          "$ref": "#/$defs/sourced_facts"
+        },
+        "required_technologies": {
+          "$ref": "#/$defs/sourced_facts"
+        },
+        "sponsor_requirements": {
+          "$ref": "#/$defs/sourced_facts"
+        },
+        "time_limit": {
+          "$ref": "#/$defs/nullable_sourced_fact"
+        },
+        "submission_format": {
+          "$ref": "#/$defs/sourced_facts"
+        },
+        "required_deliverables": {
+          "$ref": "#/$defs/sourced_facts"
+        },
+        "other_rules": {
+          "$ref": "#/$defs/sourced_facts"
+        },
+        "unknowns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/conflict"
+          }
+        }
+      }
+    },
+    "discovery_view": {
+      "type": "object",
+      "description": "Demand-discovery facts only; no technology or sponsor requirements.",
+      "additionalProperties": false,
+      "required": [
+        "theme",
+        "problem_domains",
+        "explicit_audiences",
+        "nontechnical_boundaries",
+        "unknowns"
+      ],
+      "properties": {
+        "theme": {
+          "type": ["string", "null"]
+        },
+        "problem_domains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "explicit_audiences": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "nontechnical_boundaries": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "unknowns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "compliance_view": {
+      "type": "object",
+      "description": "Hard delivery and technology facts withheld from early discovery stages.",
+      "additionalProperties": false,
+      "required": [
+        "required_technologies",
+        "allowed_technologies",
+        "sponsor_requirements",
+        "time_limit",
+        "submission_format",
+        "required_deliverables",
+        "hard_rules",
+        "unknowns",
+        "conflicts"
+      ],
+      "properties": {
+        "required_technologies": {
+          "$ref": "#/$defs/sourced_facts"
+        },
+        "allowed_technologies": {
+          "$ref": "#/$defs/sourced_facts"
+        },
+        "sponsor_requirements": {
+          "$ref": "#/$defs/sourced_facts"
+        },
+        "time_limit": {
+          "$ref": "#/$defs/nullable_sourced_fact"
+        },
+        "submission_format": {
+          "$ref": "#/$defs/sourced_facts"
+        },
+        "required_deliverables": {
+          "$ref": "#/$defs/sourced_facts"
+        },
+        "hard_rules": {
+          "$ref": "#/$defs/sourced_facts"
+        },
+        "unknowns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/conflict"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sourced_fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "source_excerpt"],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_excerpt": {
+          "type": "string"
+        }
+      }
+    },
+    "sourced_facts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/sourced_fact"
+      }
+    },
+    "nullable_sourced_fact": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/sourced_fact"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "conflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["statements", "source_excerpts"],
+      "properties": {
+        "statements": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "string"
+          }
+        },
+        "source_excerpts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

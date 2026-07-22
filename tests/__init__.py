@@ -1,0 +1,2 @@
+"""HackSome test suite."""
+
