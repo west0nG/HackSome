@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from typing import Any
@@ -138,4 +139,54 @@ class CreativeC7WorkflowTests(unittest.IsolatedAsyncioTestCase):
                     }
                     for record in state["artifacts"].values()
                 )
+            )
+
+    async def test_tampered_frozen_output_fails_but_keeps_plan_for_audit(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workflow = CreativeIdeaWorkflow.create(
+                "Make a legible interactive surprise.",
+                directory,
+                settings=_settings(),
+                runner=CreativeCurationRunner(empty_concepts=True),
+                run_id="creative-c7-tampered",
+            )
+            with patch(
+                "hacksome.creative.finalization.FinalizationCoordinator",
+                _faulting_coordinator("after_publish:1"),
+            ):
+                interrupted = await workflow.execute()
+
+            self.assertEqual(interrupted.status, "finalizing")
+            manifest_path = workflow.run_dir / FINALIZATION_MANIFEST_PATH
+            manifest = json.loads(
+                manifest_path.read_text(encoding="utf-8")
+            )
+            staged_path = (
+                workflow.run_dir / manifest["outputs"][0]["staged_path"]
+            )
+            staged_path.write_bytes(b"tampered\n")
+
+            with self.assertRaisesRegex(
+                CreativeWorkflowError,
+                "deterministic finalization failed",
+            ):
+                await workflow.resume()
+
+            state = workflow.hub.load_state()
+            self.assertEqual(state["status"], "failed")
+            self.assertEqual(state["result_artifact_ids"], [])
+            self.assertEqual(
+                state["finalization"]["phase"],
+                "publishing",
+            )
+            self.assertTrue(manifest_path.is_file())
+            self.assertIn(
+                "creative-idea-report",
+                state["artifacts"],
+            )
+            self.assertIn(
+                "creative-partial-report-json",
+                state["artifacts"],
             )

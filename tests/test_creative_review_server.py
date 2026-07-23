@@ -156,12 +156,15 @@ class ReviewServerTestCase(unittest.TestCase):
         self.run_dir = Path(self.temporary.name) / "creative-run-001"
         self.run_dir.mkdir()
         self.backend = FakeReviewBackend()
-        self.server = CreativeReviewServer(
-            self.backend,
-            ReviewServerConfig(run_dir=self.run_dir),
-            review_token="review-token-for-tests",
-            curator_token="curator-token-for-tests",
-        )
+        try:
+            self.server = CreativeReviewServer(
+                self.backend,
+                ReviewServerConfig(run_dir=self.run_dir),
+                review_token="review-token-for-tests",
+                curator_token="curator-token-for-tests",
+            )
+        except PermissionError:
+            self.skipTest("loopback sockets are unavailable in this environment")
         self.server.start()
         self.addCleanup(self.server.stop)
 
@@ -630,10 +633,15 @@ class TestReviewServerLifecycle(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             run_dir = Path(directory) / "run"
             run_dir.mkdir()
-            first = CreativeReviewServer(
-                FakeReviewBackend(),
-                ReviewServerConfig(run_dir=run_dir),
-            )
+            try:
+                first = CreativeReviewServer(
+                    FakeReviewBackend(),
+                    ReviewServerConfig(run_dir=run_dir),
+                )
+            except PermissionError:
+                self.skipTest(
+                    "loopback sockets are unavailable in this environment"
+                )
             second = CreativeReviewServer(
                 FakeReviewBackend(),
                 ReviewServerConfig(run_dir=run_dir),

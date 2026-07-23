@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 from pathlib import Path
 from typing import Any, Mapping, Protocol
@@ -13,7 +13,63 @@ from hacksome.hub import (
     RunHub,
 )
 from hacksome.prompting import PromptResourceError, useful_prompt_catalog
-from hacksome.state import StateError, read_jsonl
+from hacksome.state import (
+    StateError,
+    canonical_json_bytes,
+    read_jsonl,
+    sha256_bytes,
+)
+
+
+_SUCCESS_REPORT_TYPES = frozenset(
+    {
+        "creative_idea_report_json",
+        "creative_idea_report_markdown",
+    }
+)
+_SUCCESS_FINAL_TYPES = frozenset(
+    {
+        *_SUCCESS_REPORT_TYPES,
+        "creative_idea_card",
+        "creative_idea_card_index",
+        "creative_build_handoff",
+        "creative_memory_record",
+    }
+)
+_PARTIAL_REPORT_TYPES = frozenset(
+    {
+        "creative_partial_report_json",
+        "creative_partial_report_markdown",
+    }
+)
+_LEGACY_REPORT_TYPES = frozenset(
+    {
+        "creative_report_json",
+        "creative_report_markdown",
+    }
+)
+_ZERO_REASON_CODES = frozenset(
+    {
+        "no_concepts_generated",
+        "all_candidates_failed_hook",
+        "shortlist_empty",
+        "all_human_rejected",
+    }
+)
+_CREATIVE_RUN_STATUSES = frozenset(
+    {"created", "running", "waiting", "completed", "failed"}
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _FinalizationProjection:
+    status: str
+    manifest_ref: str | None
+    planned_artifact_count: int
+    published_artifact_count: int
+    resumable: bool
+    manifest: Any = None
+    errors: tuple[str, ...] = ()
 
 
 class RouteContractError(StateError):
@@ -228,13 +284,61 @@ class CreativeRunContract:
         batch_shortlist_count = (
             len(batch_refs) if isinstance(batch_refs, list) else 0
         )
+        reviewer_count, covered_concept_count = (
+            _creative_review_ledger_counts(
+                hub,
+                review_batch_ref=review_batch_ref,
+                review_batch=review_batch,
+            )
+        )
+        finalization = _creative_finalization_projection(
+            hub,
+            state,
+            artifacts,
+            needs_reconcile=bool(core["needs_reconcile"]),
+        )
+        report_payload: Mapping[str, Any] | None = None
+        if finalization.manifest is not None and finalization.status in {
+            "publishing",
+            "completed",
+        }:
+            semantic_errors: list[str] = []
+            report_payload = _validate_success_bundle(
+                hub,
+                state,
+                artifacts,
+                concepts,
+                dispositions,
+                finalization.manifest,
+                semantic_errors,
+            )
+            if semantic_errors:
+                finalization = replace(
+                    finalization,
+                    status="corrupt",
+                    resumable=False,
+                    errors=(
+                        *finalization.errors,
+                        *semantic_errors,
+                    ),
+                )
         zero_reason_code = state.get("zero_reason_code")
+        if report_payload is not None:
+            reported_reason = report_payload.get("zero_reason_code")
+            if reported_reason is None or isinstance(reported_reason, str):
+                zero_reason_code = reported_reason
         if zero_reason_code is None:
             candidate_reason = review_batch.get("skip_reason")
             if isinstance(candidate_reason, str):
                 zero_reason_code = candidate_reason
-        report_ref = _first_artifact_of_type(
-            artifacts, "creative_idea_report_json"
+        report_ref = (
+            _first_artifact_of_type(
+                artifacts, "creative_idea_report_json"
+            )
+            if core["status"] == "completed"
+            and finalization.status == "completed"
+            and report_payload is not None
+            else None
         )
         partial_report_ref = _first_artifact_of_type(
             artifacts, "creative_partial_report_json"
@@ -273,8 +377,8 @@ class CreativeRunContract:
                 "round_id": round_id,
                 "batch_ref": review_batch_ref,
                 "status": review_status,
-                "reviewer_count": 0,
-                "covered_concept_count": 0,
+                "reviewer_count": reviewer_count,
+                "covered_concept_count": covered_concept_count,
                 "shortlist_count": max(
                     len(shortlisted),
                     batch_shortlist_count,
@@ -287,11 +391,15 @@ class CreativeRunContract:
                 ),
             },
             "finalization": {
-                "status": "not_started",
-                "manifest_ref": None,
-                "planned_artifact_count": 0,
-                "published_artifact_count": 0,
-                "resumable": False,
+                "status": finalization.status,
+                "manifest_ref": finalization.manifest_ref,
+                "planned_artifact_count": (
+                    finalization.planned_artifact_count
+                ),
+                "published_artifact_count": (
+                    finalization.published_artifact_count
+                ),
+                "resumable": finalization.resumable,
             },
             "zero_reason_code": zero_reason_code,
             "report_ref": report_ref,
@@ -1457,6 +1565,15 @@ class CreativeRunContract:
                             "MemoryStageSummary challenger/task link is invalid: "
                             f"{slot.challenger_ref}"
                         )
+        errors.extend(
+            _validate_creative_c7(
+                hub,
+                state,
+                artifacts,
+                concepts,
+                dispositions,
+            )
+        )
         return errors
 
 
@@ -1583,3 +1700,1165 @@ def _creative_dispositions(
             continue
         dispositions.append(value)
     return dispositions
+
+
+def _creative_review_ledger_counts(
+    hub: RunHub,
+    *,
+    review_batch_ref: str | None,
+    review_batch: Mapping[str, Any],
+) -> tuple[int, int]:
+    """Project current reviewer/coverage counts from the durable ledger."""
+
+    if review_batch_ref is None or not review_batch:
+        return 0, 0
+    from hacksome.creative.review import (
+        ReviewBatch,
+        ReviewError,
+        ReviewRound,
+        ReviewStore,
+    )
+
+    try:
+        batch = ReviewBatch.from_dict(review_batch)
+        if batch.status != "ready":
+            return 0, 0
+        snapshot = ReviewStore(hub, ReviewRound.open(batch)).snapshot()
+    except (OSError, StateError, ReviewError):
+        return 0, 0
+    return (
+        len(snapshot.latest_reviews),
+        sum(item.covered for item in snapshot.coverage),
+    )
+
+
+def _creative_finalization_projection(
+    hub: RunHub,
+    state: Mapping[str, Any],
+    artifacts: Mapping[str, Any],
+    *,
+    needs_reconcile: bool,
+) -> _FinalizationProjection:
+    """Read and verify the immutable C7 plan without repairing persisted state."""
+
+    from hacksome.creative.finalization import (
+        FINALIZATION_MANIFEST_PATH,
+        FINALIZATION_STAGE,
+        FinalizationCoordinator,
+        FinalizationError,
+        FinalizationManifest,
+    )
+
+    manifest_path = hub.run_dir / FINALIZATION_MANIFEST_PATH
+    pointer = state.get("finalization")
+    if pointer is None and not manifest_path.exists():
+        return _FinalizationProjection(
+            status="not_started",
+            manifest_ref=None,
+            planned_artifact_count=0,
+            published_artifact_count=0,
+            resumable=False,
+        )
+
+    errors: list[str] = []
+    manifest: FinalizationManifest | None = None
+    phase = "publishing"
+    failed_plan = False
+    try:
+        if manifest_path.is_symlink() or not manifest_path.is_file():
+            raise StateError(
+                "finalization manifest is missing or not a regular file"
+            )
+        raw_bytes = manifest_path.read_bytes()
+        decoded = json.loads(raw_bytes.decode("utf-8"))
+        if not isinstance(decoded, dict):
+            raise StateError("finalization manifest must be an object")
+        manifest = FinalizationManifest.from_dict(decoded)
+        canonical = canonical_json_bytes(manifest.to_dict())
+        if raw_bytes != canonical:
+            raise StateError("finalization manifest bytes are not canonical")
+        manifest_sha256 = sha256_bytes(raw_bytes)
+        if manifest_sha256 != manifest.manifest_sha256:
+            raise StateError("finalization manifest hash is inconsistent")
+
+        if pointer is not None:
+            if not isinstance(pointer, dict) or set(pointer) != {
+                "id",
+                "manifest_path",
+                "manifest_sha256",
+                "phase",
+            }:
+                raise StateError(
+                    "run finalization pointer has invalid fields"
+                )
+            phase_value = pointer.get("phase")
+            if phase_value not in {"publishing", "completed"}:
+                raise StateError("run finalization phase is invalid")
+            phase = str(phase_value)
+            if (
+                pointer.get("id") != manifest.finalization_id
+                or pointer.get("manifest_path")
+                != FINALIZATION_MANIFEST_PATH
+                or pointer.get("manifest_sha256") != manifest_sha256
+            ):
+                raise StateError(
+                    "run finalization pointer does not match its manifest"
+                )
+        if manifest.source.run_id != state.get("run_id"):
+            raise StateError("finalization manifest belongs to another run")
+        route = state.get("route")
+        if not isinstance(route, dict) or (
+            manifest.source.route_contract_version
+            != route.get("contract_version")
+            or manifest.report_policy_version
+            != route.get("report_policy_version")
+        ):
+            raise StateError("finalization manifest route policy mismatch")
+
+        if phase == "completed":
+            if (
+                state.get("status") != "completed"
+                or state.get("current_stage") != FINALIZATION_STAGE
+            ):
+                raise StateError(
+                    "completed finalization has an invalid run lifecycle"
+                )
+            coordinator = FinalizationCoordinator(hub)
+            coordinator._verify_staged_and_existing(manifest)
+            coordinator._validate_source_and_progress(
+                manifest,
+                hub.load_consistent_snapshot(),
+            )
+        elif state.get("status") == "failed":
+            if (
+                pointer is None
+                or state.get("current_stage") != FINALIZATION_STAGE
+            ):
+                raise StateError(
+                    "failed finalization has an invalid run lifecycle"
+                )
+            failed_plan = True
+            audit_errors = _failed_finalization_audit_errors(
+                hub,
+                state,
+                artifacts,
+                manifest,
+            )
+            if audit_errors:
+                raise StateError("; ".join(audit_errors))
+        else:
+            if (
+                state.get("status") != "running"
+                or state.get("current_stage") != FINALIZATION_STAGE
+            ):
+                raise StateError(
+                    "publishing finalization has an invalid run lifecycle"
+                )
+            coordinator = FinalizationCoordinator(hub)
+            coordinator._verify_staged_and_existing(manifest)
+            coordinator._validate_source_and_progress(
+                manifest,
+                hub.load_consistent_snapshot(),
+            )
+    except (
+        OSError,
+        UnicodeError,
+        json.JSONDecodeError,
+        StateError,
+        FinalizationError,
+        ValueError,
+    ) as exc:
+        errors.append(f"invalid Creative finalization: {exc}")
+
+    planned = len(manifest.outputs) if manifest is not None else 0
+    published = 0
+    if manifest is not None:
+        published = sum(
+            artifacts.get(output.artifact_id) == output.artifact_record
+            for output in manifest.outputs
+        )
+    if errors or failed_plan:
+        status = "corrupt"
+    else:
+        status = "completed" if phase == "completed" else "publishing"
+    return _FinalizationProjection(
+        status=status,
+        manifest_ref=(
+            FINALIZATION_MANIFEST_PATH if manifest is not None else None
+        ),
+        planned_artifact_count=planned,
+        published_artifact_count=published,
+        resumable=(
+            status == "publishing"
+            and not needs_reconcile
+        ),
+        manifest=manifest,
+        errors=tuple(errors),
+    )
+
+
+def _failed_finalization_audit_errors(
+    hub: RunHub,
+    state: Mapping[str, Any],
+    artifacts: Mapping[str, Any],
+    manifest: Any,
+) -> tuple[str, ...]:
+    """Validate the frozen plan as audit evidence after fail-closed C7."""
+
+    from hacksome.creative.finalization import FINALIZATION_STAGE
+    from hacksome.creative.partial_report import (
+        PARTIAL_REPORT_JSON_ID,
+        PARTIAL_REPORT_MARKDOWN_ID,
+    )
+
+    errors: list[str] = []
+    if (
+        state.get("status") != "failed"
+        or state.get("current_stage") != FINALIZATION_STAGE
+        or state.get("result_artifact_ids") != []
+        or not isinstance(state.get("terminal_error"), dict)
+        or state.get("transition_seq")
+        != manifest.source.transition_seq + 1
+    ):
+        errors.append("failed C7 lifecycle does not match its frozen plan")
+    if state.get("pending_records") != []:
+        errors.append("failed C7 audit has unreconciled ledger records")
+
+    planned_ids = {output.artifact_id for output in manifest.outputs}
+    published_outputs: list[Any] = []
+    saw_gap = False
+    for output in manifest.outputs:
+        record = artifacts.get(output.artifact_id)
+        if record is None:
+            saw_gap = True
+            continue
+        if saw_gap:
+            errors.append(
+                "failed C7 artifacts are not a contiguous manifest prefix"
+            )
+        published_outputs.append(output)
+        if record != output.artifact_record:
+            errors.append(
+                f"failed C7 artifact record changed: {output.artifact_id}"
+            )
+
+    registered_success = _artifact_ids_of_types(
+        artifacts,
+        _SUCCESS_FINAL_TYPES,
+    )
+    published_ids = {output.artifact_id for output in published_outputs}
+    if registered_success != published_ids:
+        errors.append(
+            "failed C7 final outputs are not the exact manifest prefix"
+        )
+    plan_linked_ids = {
+        str(artifact_id)
+        for artifact_id, record in artifacts.items()
+        if isinstance(record, dict)
+        and isinstance(record.get("metadata"), dict)
+        and record["metadata"].get("finalization_id")
+        == manifest.finalization_id
+    }
+    if plan_linked_ids != published_ids or not plan_linked_ids.issubset(
+        planned_ids
+    ):
+        errors.append(
+            "failed C7 plan-linked artifacts do not match the manifest"
+        )
+
+    try:
+        snapshot = hub.load_consistent_snapshot()
+    except (OSError, StateError) as exc:
+        return (*errors, f"cannot read failed C7 audit ledgers: {exc}")
+    ledgers = snapshot.get("ledgers")
+    if not isinstance(ledgers, dict):
+        return (*errors, "failed C7 audit ledgers are invalid")
+
+    for head in manifest.source.ledger_heads:
+        records = ledgers.get(head.ledger)
+        if not isinstance(records, list):
+            errors.append(f"failed C7 {head.ledger} ledger is invalid")
+            continue
+        if (
+            len(records) < head.record_count
+            or not head.matches(records[: head.record_count])
+        ):
+            errors.append(
+                f"failed C7 {head.ledger} source prefix changed"
+            )
+        if head.ledger != "events" and len(records) != head.record_count:
+            errors.append(
+                f"failed C7 {head.ledger} ledger changed after freeze"
+            )
+
+    event_head = manifest.source.head("events")
+    events = ledgers.get("events")
+    if not isinstance(events, list) or len(events) < event_head.record_count:
+        return (*errors, "failed C7 events ledger is invalid")
+    suffix = events[event_head.record_count :]
+    planned_events = [
+        output.publish_event for output in published_outputs
+    ]
+    if suffix[: len(planned_events)] != planned_events:
+        errors.append(
+            "failed C7 events lack the exact planned publish prefix"
+        )
+
+    terminal_error = state.get("terminal_error")
+    failure_event = {
+        "event_id": manifest.completed_transition.event_id,
+        "kind": "run.status",
+        "data": {
+            "from_status": "running",
+            "to_status": "failed",
+            "status": "failed",
+            "stage": FINALIZATION_STAGE,
+            "reason": None,
+        },
+        "created_at": (
+            terminal_error.get("at")
+            if isinstance(terminal_error, dict)
+            else None
+        ),
+    }
+    if (
+        not isinstance(terminal_error, dict)
+        or terminal_error.get("event_id") != failure_event["event_id"]
+        or terminal_error.get("stage") != FINALIZATION_STAGE
+    ):
+        errors.append("failed C7 terminal error is not bound to its transition")
+
+    partial_records: list[tuple[str, Mapping[str, Any]]] = []
+    for artifact_id in (
+        PARTIAL_REPORT_MARKDOWN_ID,
+        PARTIAL_REPORT_JSON_ID,
+    ):
+        record = artifacts.get(artifact_id)
+        if not isinstance(record, dict):
+            continue
+        partial_records.append((artifact_id, record))
+    fixed_prefix = [*planned_events, failure_event]
+    partial_suffix = suffix[len(fixed_prefix) :]
+    partial_events_match = len(partial_suffix) == len(partial_records)
+    for event, (artifact_id, record) in zip(
+        partial_suffix,
+        partial_records,
+        strict=False,
+    ):
+        partial_events_match = partial_events_match and (
+            isinstance(event, dict)
+            and set(event) == {
+                "event_id",
+                "kind",
+                "data",
+                "created_at",
+            }
+            and event.get("event_id")
+            == f"artifact:{artifact_id}:published"
+            and event.get("kind") == "artifact.published"
+            and event.get("data")
+            == {
+                "artifact_id": artifact_id,
+                "artifact_type": record.get("artifact_type"),
+            }
+            and isinstance(event.get("created_at"), str)
+            and bool(event.get("created_at"))
+        )
+    if (
+        suffix[: len(fixed_prefix)] != fixed_prefix
+        or not partial_events_match
+    ):
+        errors.append(
+            "failed C7 events are not the exact plan/failure/partial sequence"
+        )
+    return tuple(errors)
+
+
+def _validate_creative_c7(
+    hub: RunHub,
+    state: Mapping[str, Any],
+    artifacts: Mapping[str, Any],
+    concepts: Mapping[str, Mapping[str, Any]],
+    dispositions: list[dict[str, Any]],
+) -> list[str]:
+    """Validate the status-specific C7 publication contract."""
+
+    errors: list[str] = []
+    for artifact_id, record in artifacts.items():
+        if (
+            isinstance(record, dict)
+            and record.get("artifact_type") in _LEGACY_REPORT_TYPES
+        ):
+            errors.append(
+                f"Creative report {artifact_id} uses a non-canonical artifact type"
+            )
+
+    finalization = _creative_finalization_projection(
+        hub,
+        state,
+        artifacts,
+        needs_reconcile=bool(state.get("pending_records")),
+    )
+    success_ids = _artifact_ids_of_types(artifacts, _SUCCESS_FINAL_TYPES)
+    partial_ids = _artifact_ids_of_types(artifacts, _PARTIAL_REPORT_TYPES)
+    raw_results = state.get("result_artifact_ids")
+    result_ids = raw_results if isinstance(raw_results, list) else []
+    status = state.get("status")
+    if status not in _CREATIVE_RUN_STATUSES:
+        errors.append(f"Creative run has unsupported status: {status!r}")
+        return errors
+
+    if status == "failed":
+        if result_ids:
+            errors.append("failed Creative run must not expose result artifact IDs")
+        if finalization.manifest is None:
+            if success_ids:
+                errors.append(
+                    "failed Creative run contains unplanned C7 outputs"
+                )
+        else:
+            planned_ids = {
+                output.artifact_id
+                for output in finalization.manifest.outputs
+            }
+            if not success_ids.issubset(planned_ids):
+                errors.append(
+                    "failed Creative run contains unplanned C7 outputs"
+                )
+        if finalization.status == "not_started":
+            pass
+        elif (
+            finalization.status != "corrupt"
+            or finalization.manifest is None
+        ):
+            errors.extend(finalization.errors)
+            errors.append(
+                "failed Creative run has an invalid C7 audit manifest"
+            )
+        else:
+            errors.extend(finalization.errors)
+        _validate_partial_bundle(hub, state, artifacts, partial_ids, errors)
+        return errors
+
+    if status == "waiting":
+        if success_ids or partial_ids:
+            errors.append("waiting Creative run must not contain C7 outputs")
+        if result_ids:
+            errors.append("waiting Creative run must not expose result artifact IDs")
+        if finalization.status != "not_started":
+            errors.extend(finalization.errors)
+            errors.append("waiting Creative run must not have a C7 finalization")
+        return errors
+
+    if status == "completed":
+        if partial_ids:
+            errors.append("completed Creative run must not contain partial reports")
+        errors.extend(finalization.errors)
+        if (
+            finalization.manifest is not None
+            and result_ids
+            != list(finalization.manifest.result_artifact_ids)
+        ):
+            errors.append(
+                "completed Creative result artifact IDs do not match the manifest"
+            )
+        if finalization.status != "completed" or finalization.manifest is None:
+            errors.append(
+                "completed Creative run requires a completed finalization manifest"
+            )
+            return errors
+        report = _validate_success_bundle(
+            hub,
+            state,
+            artifacts,
+            concepts,
+            dispositions,
+            finalization.manifest,
+            errors,
+        )
+        if report is None:
+            return errors
+        expected_results = list(finalization.manifest.result_artifact_ids)
+        if result_ids != expected_results:
+            errors.append(
+                "completed Creative result artifact IDs do not match the manifest"
+            )
+        return errors
+
+    if (
+        status == "running"
+        and state.get("current_stage") == "creative-finalization"
+    ):
+        if partial_ids:
+            errors.append("publishing Creative run must not contain partial reports")
+        if result_ids:
+            errors.append(
+                "publishing Creative run must not expose result artifact IDs"
+            )
+        errors.extend(finalization.errors)
+        if (
+            finalization.status != "publishing"
+            or finalization.manifest is None
+        ):
+            errors.append(
+                "Creative finalization stage requires a valid frozen manifest"
+            )
+            return errors
+        _validate_success_bundle(
+            hub,
+            state,
+            artifacts,
+            concepts,
+            dispositions,
+            finalization.manifest,
+            errors,
+        )
+        if not finalization.resumable:
+            errors.append("Creative publishing manifest is not safely resumable")
+        return errors
+
+    if success_ids or partial_ids:
+        errors.append("Creative run contains C7 outputs before finalization")
+    if result_ids:
+        errors.append("Creative run exposes result artifacts before completion")
+    if finalization.status != "not_started":
+        errors.extend(finalization.errors)
+        errors.append("Creative run has a finalization outside the C7 lifecycle")
+    return errors
+
+
+def _artifact_ids_of_types(
+    artifacts: Mapping[str, Any],
+    artifact_types: frozenset[str],
+) -> set[str]:
+    return {
+        str(artifact_id)
+        for artifact_id, record in artifacts.items()
+        if isinstance(record, dict)
+        and record.get("artifact_type") in artifact_types
+    }
+
+
+def _validate_partial_bundle(
+    hub: RunHub,
+    state: Mapping[str, Any],
+    artifacts: Mapping[str, Any],
+    partial_ids: set[str],
+    errors: list[str],
+) -> None:
+    from hacksome.creative.partial_report import (
+        PARTIAL_REPORT_JSON_ID,
+        PARTIAL_REPORT_JSON_PATH,
+        PARTIAL_REPORT_MARKDOWN_ID,
+        PARTIAL_REPORT_MARKDOWN_PATH,
+    )
+
+    if not partial_ids:
+        secondary = state.get("secondary_errors")
+        if not isinstance(secondary, list) or not secondary:
+            errors.append("failed Creative run has no deterministic partial report")
+        return
+    expected = {
+        PARTIAL_REPORT_MARKDOWN_ID: (
+            "creative_partial_report_markdown",
+            PARTIAL_REPORT_MARKDOWN_PATH,
+        ),
+        PARTIAL_REPORT_JSON_ID: (
+            "creative_partial_report_json",
+            PARTIAL_REPORT_JSON_PATH,
+        ),
+    }
+    if partial_ids != set(expected):
+        errors.append(
+            "failed Creative run requires exactly one partial Markdown and JSON report"
+        )
+        return
+    for artifact_id, (artifact_type, path) in expected.items():
+        record = artifacts.get(artifact_id)
+        if (
+            not isinstance(record, dict)
+            or record.get("artifact_type") != artifact_type
+            or record.get("path") != path
+        ):
+            errors.append(
+                f"partial report artifact binding is invalid: {artifact_id}"
+            )
+
+    try:
+        payload = json.loads(hub.read_artifact(PARTIAL_REPORT_JSON_ID))
+    except (OSError, UnicodeError, json.JSONDecodeError, StateError) as exc:
+        errors.append(f"invalid Creative partial report JSON: {exc}")
+        return
+    if not isinstance(payload, dict):
+        errors.append("Creative partial report JSON must be an object")
+        return
+    if (
+        payload.get("status") != "failed"
+        or payload.get("run_id") != state.get("run_id")
+        or payload.get("terminal_error") != state.get("terminal_error")
+    ):
+        errors.append("Creative partial report is not bound to its failed run")
+    if (
+        payload.get("final_idea_card_ids") != []
+        or payload.get("handoff_refs") != []
+        or payload.get("memory_record_ref") is not None
+    ):
+        errors.append("Creative partial report must not expose final outputs")
+
+
+def _validate_success_bundle(
+    hub: RunHub,
+    state: Mapping[str, Any],
+    artifacts: Mapping[str, Any],
+    concepts: Mapping[str, Mapping[str, Any]],
+    dispositions: list[dict[str, Any]],
+    manifest: Any,
+    errors: list[str],
+) -> Mapping[str, Any] | None:
+    """Validate every staged C7 byte plus its cross-artifact references."""
+
+    from hacksome.artifacts import ArtifactError, validate_markdown
+    from hacksome.creative.artifacts import FINAL_IDEA_CARD_HEADINGS
+    from hacksome.creative.memory import (
+        MemoryRecord,
+        MemoryValidationError,
+    )
+    from hacksome.creative.report import (
+        IDEA_CARD_INDEX_ARTIFACT_ID,
+        IDEA_CARD_INDEX_PATH,
+        MEMORY_RECORD_ARTIFACT_ID,
+        MEMORY_RECORD_PATH,
+        REPORT_JSON_ARTIFACT_ID,
+        REPORT_JSON_PATH,
+        REPORT_MARKDOWN_ARTIFACT_ID,
+        REPORT_MARKDOWN_PATH,
+    )
+
+    outputs = tuple(manifest.outputs)
+    planned_ids = tuple(output.artifact_id for output in outputs)
+    if manifest.result_artifact_ids != planned_ids:
+        errors.append("C7 manifest must expose every planned output as a result")
+
+    output_by_id = {output.artifact_id: output for output in outputs}
+    if len(output_by_id) != len(outputs):
+        errors.append("C7 manifest contains duplicate output IDs")
+        return None
+    if any(output.artifact_type not in _SUCCESS_FINAL_TYPES for output in outputs):
+        errors.append("C7 manifest contains a non-canonical output type")
+
+    registered_success = _artifact_ids_of_types(
+        artifacts,
+        _SUCCESS_FINAL_TYPES,
+    )
+    if not registered_success.issubset(output_by_id):
+        errors.append("registered C7 outputs are absent from the frozen manifest")
+
+    final_ideas = {
+        str(artifact_id): record
+        for artifact_id, record in artifacts.items()
+        if isinstance(record, dict)
+        and record.get("artifact_type") == "creative_final_idea"
+    }
+    expected_card_ids = tuple(
+        f"{idea_id}-card" for idea_id in sorted(final_ideas)
+    )
+    expected_handoff_ids = tuple(
+        f"{idea_id}-handoff" for idea_id in sorted(final_ideas)
+    )
+    expected_order = (
+        REPORT_MARKDOWN_ARTIFACT_ID,
+        REPORT_JSON_ARTIFACT_ID,
+        *expected_card_ids,
+        IDEA_CARD_INDEX_ARTIFACT_ID,
+        *expected_handoff_ids,
+        MEMORY_RECORD_ARTIFACT_ID,
+    )
+    if planned_ids != expected_order:
+        errors.append(
+            "C7 manifest output IDs/counts do not match Final Ideas"
+        )
+
+    fixed_outputs = {
+        REPORT_MARKDOWN_ARTIFACT_ID: (
+            "creative_idea_report_markdown",
+            REPORT_MARKDOWN_PATH,
+        ),
+        REPORT_JSON_ARTIFACT_ID: (
+            "creative_idea_report_json",
+            REPORT_JSON_PATH,
+        ),
+        IDEA_CARD_INDEX_ARTIFACT_ID: (
+            "creative_idea_card_index",
+            IDEA_CARD_INDEX_PATH,
+        ),
+        MEMORY_RECORD_ARTIFACT_ID: (
+            "creative_memory_record",
+            MEMORY_RECORD_PATH,
+        ),
+    }
+    for artifact_id, (artifact_type, path) in fixed_outputs.items():
+        output = output_by_id.get(artifact_id)
+        if (
+            output is None
+            or output.artifact_type != artifact_type
+            or output.final_path != path
+        ):
+            errors.append(f"C7 output binding is invalid: {artifact_id}")
+    for idea_id in sorted(final_ideas):
+        card_id = f"{idea_id}-card"
+        handoff_id = f"{idea_id}-handoff"
+        card = output_by_id.get(card_id)
+        handoff = output_by_id.get(handoff_id)
+        if (
+            card is None
+            or card.artifact_type != "creative_idea_card"
+            or card.final_path
+            != f"artifacts/creative/idea-cards/{idea_id}.md"
+        ):
+            errors.append(f"Final Idea Card binding is invalid: {card_id}")
+        if (
+            handoff is None
+            or handoff.artifact_type != "creative_build_handoff"
+            or handoff.final_path
+            != f"artifacts/creative/handoffs/{idea_id}.json"
+        ):
+            errors.append(f"Build handoff binding is invalid: {handoff_id}")
+
+    content_by_id: dict[str, bytes] = {}
+    for output in outputs:
+        try:
+            content_by_id[output.artifact_id] = (
+                hub.run_dir / output.staged_path
+            ).read_bytes()
+        except OSError as exc:
+            errors.append(
+                f"cannot read staged C7 output {output.artifact_id}: {exc}"
+            )
+    report_bytes = content_by_id.get(REPORT_JSON_ARTIFACT_ID)
+    if report_bytes is None:
+        return None
+    report = _decode_canonical_json_output(
+        report_bytes,
+        label="Creative success report JSON",
+        errors=errors,
+    )
+    if report is None:
+        return None
+    _validate_success_report_payload(
+        hub,
+        state,
+        concepts,
+        dispositions,
+        report,
+        expected_card_ids=expected_card_ids,
+        expected_handoff_ids=expected_handoff_ids,
+        errors=errors,
+    )
+
+    report_markdown = _decode_utf8_output(
+        content_by_id.get(REPORT_MARKDOWN_ARTIFACT_ID),
+        label="Creative success report Markdown",
+        errors=errors,
+    )
+    if report_markdown is not None and not report_markdown.startswith(
+        "# Creative Idea Report\n"
+    ):
+        errors.append("Creative success report Markdown has an invalid title")
+
+    card_markdown: dict[str, str] = {}
+    for card_id in expected_card_ids:
+        markdown = _decode_utf8_output(
+            content_by_id.get(card_id),
+            label=f"Final Idea Card {card_id}",
+            errors=errors,
+        )
+        if markdown is None:
+            continue
+        card_markdown[card_id] = markdown
+        try:
+            validate_markdown(
+                markdown,
+                required_h2=FINAL_IDEA_CARD_HEADINGS,
+                label=f"Final Idea Card {card_id}",
+            )
+        except ArtifactError as exc:
+            errors.append(str(exc))
+
+    index_markdown = _decode_utf8_output(
+        content_by_id.get(IDEA_CARD_INDEX_ARTIFACT_ID),
+        label="Creative Idea Card index",
+        errors=errors,
+    )
+    if index_markdown is not None:
+        for card_id in expected_card_ids:
+            output = output_by_id.get(card_id)
+            if (
+                output is not None
+                and (
+                    index_markdown.count(card_id) != 1
+                    or index_markdown.count(output.sha256) != 1
+                )
+            ):
+                errors.append(
+                    f"Creative Idea Card index does not bind {card_id}"
+                )
+
+    challenge_markdown: str | None = None
+    challenge_ref = report.get("challenge_ref")
+    if isinstance(challenge_ref, str) and challenge_ref in artifacts:
+        try:
+            challenge_markdown = hub.read_artifact(challenge_ref)
+        except (OSError, UnicodeError, StateError) as exc:
+            errors.append(f"invalid report Challenge reference: {exc}")
+    else:
+        errors.append("Creative success report has an unknown Challenge ref")
+
+    for idea_id in sorted(final_ideas):
+        card_id = f"{idea_id}-card"
+        handoff_id = f"{idea_id}-handoff"
+        handoff_bytes = content_by_id.get(handoff_id)
+        if handoff_bytes is None:
+            continue
+        handoff = _decode_canonical_json_output(
+            handoff_bytes,
+            label=f"Build handoff {handoff_id}",
+            errors=errors,
+        )
+        if handoff is None:
+            continue
+        card_output = output_by_id.get(card_id)
+        if (
+            set(handoff)
+            != {
+                "source_run_id",
+                "idea_card_id",
+                "idea_card_sha256",
+                "challenge_markdown",
+                "initial_idea_card_markdown",
+            }
+            or handoff.get("source_run_id") != state.get("run_id")
+            or handoff.get("idea_card_id") != card_id
+            or card_output is None
+            or handoff.get("idea_card_sha256") != card_output.sha256
+            or handoff.get("initial_idea_card_markdown")
+            != card_markdown.get(card_id)
+            or handoff.get("challenge_markdown") != challenge_markdown
+        ):
+            errors.append(f"Build handoff reference closure is invalid: {handoff_id}")
+
+    memory_bytes = content_by_id.get(MEMORY_RECORD_ARTIFACT_ID)
+    if memory_bytes is not None:
+        memory_payload = _decode_canonical_json_output(
+            memory_bytes,
+            label="Creative Memory Record",
+            errors=errors,
+        )
+        if memory_payload is not None:
+            try:
+                memory_record = MemoryRecord.from_mapping(memory_payload)
+            except MemoryValidationError as exc:
+                errors.append(f"invalid Creative Memory Record: {exc}")
+            else:
+                report_output = output_by_id.get(
+                    REPORT_MARKDOWN_ARTIFACT_ID
+                )
+                _validate_memory_record_closure(
+                    state,
+                    artifacts,
+                    concepts,
+                    dispositions,
+                    final_ideas,
+                    memory_record,
+                    report,
+                    report_sha256=(
+                        report_output.sha256
+                        if report_output is not None
+                        else None
+                    ),
+                    errors=errors,
+                )
+    return report
+
+
+def _decode_utf8_output(
+    content: bytes | None,
+    *,
+    label: str,
+    errors: list[str],
+) -> str | None:
+    if content is None:
+        errors.append(f"{label} is missing from the frozen C7 plan")
+        return None
+    try:
+        return content.decode("utf-8")
+    except UnicodeError as exc:
+        errors.append(f"{label} is not UTF-8: {exc}")
+        return None
+
+
+def _decode_canonical_json_output(
+    content: bytes,
+    *,
+    label: str,
+    errors: list[str],
+) -> dict[str, Any] | None:
+    try:
+        value = json.loads(content.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        errors.append(f"{label} is not valid JSON: {exc}")
+        return None
+    if not isinstance(value, dict):
+        errors.append(f"{label} must be a JSON object")
+        return None
+    if content != canonical_json_bytes(value) + b"\n":
+        errors.append(f"{label} bytes are not canonical")
+    return value
+
+
+def _validate_success_report_payload(
+    hub: RunHub,
+    state: Mapping[str, Any],
+    concepts: Mapping[str, Mapping[str, Any]],
+    dispositions: list[dict[str, Any]],
+    report: Mapping[str, Any],
+    *,
+    expected_card_ids: tuple[str, ...],
+    expected_handoff_ids: tuple[str, ...],
+    errors: list[str],
+) -> None:
+    expected_keys = {
+        "schema_version",
+        "route",
+        "run_id",
+        "status",
+        "challenge_ref",
+        "creative_brief_ref",
+        "idea_memory",
+        "counts",
+        "territory_ids",
+        "concepts",
+        "review_rounds",
+        "zero_reason_code",
+        "empty_batch_skip_reason",
+        "final_idea_card_ids",
+        "handoff_refs",
+        "memory_record_ref",
+        "report_policy_version",
+    }
+    if set(report) != expected_keys:
+        errors.append("Creative success report JSON has invalid top-level fields")
+    route = state.get("route")
+    report_route = report.get("route")
+    if (
+        report.get("schema_version") != 1
+        or report.get("status") != "completed"
+        or report.get("run_id") != state.get("run_id")
+        or not isinstance(route, dict)
+        or report_route
+        != {
+            "id": "creative",
+            "contract_version": route.get("contract_version"),
+        }
+        or report.get("report_policy_version")
+        != route.get("report_policy_version")
+    ):
+        errors.append("Creative success report identity/policy binding is invalid")
+    if report.get("final_idea_card_ids") != list(expected_card_ids):
+        errors.append("Creative success report Idea Card refs are not exact")
+    if report.get("handoff_refs") != list(expected_handoff_ids):
+        errors.append("Creative success report handoff refs are not exact")
+    if report.get("memory_record_ref") != "creative-memory-record":
+        errors.append("Creative success report has an invalid Memory Record ref")
+
+    zero_reason = report.get("zero_reason_code")
+    if expected_card_ids:
+        if zero_reason is not None:
+            errors.append("non-zero Creative report must not have zero_reason_code")
+    elif zero_reason not in _ZERO_REASON_CODES:
+        errors.append("zero-Idea Creative report requires a valid zero_reason_code")
+    persisted_reason = state.get("zero_reason_code")
+    if persisted_reason is not None and persisted_reason != zero_reason:
+        errors.append("Creative report zero_reason_code is stale")
+
+    counts = report.get("counts")
+    concept_id_to_refs: dict[str, list[str]] = {}
+    for artifact_id, record in concepts.items():
+        concept_id = _metadata_value(record, "concept_id")
+        if isinstance(concept_id, str):
+            concept_id_to_refs.setdefault(concept_id, []).append(artifact_id)
+    if (
+        not isinstance(counts, dict)
+        or counts.get("concepts") != len(concept_id_to_refs)
+        or counts.get("concept_revisions") != len(concepts)
+        or counts.get("final_ideas") != len(expected_card_ids)
+    ):
+        errors.append("Creative success report counts do not match persisted artifacts")
+
+    terminal_by_ref = {
+        concept_ref: [
+            row
+            for row in dispositions
+            if row.get("concept_revision_ref") == concept_ref
+            and row.get("terminal") is True
+        ]
+        for concept_ref in concepts
+    }
+    for concept_ref, rows in terminal_by_ref.items():
+        if len(rows) != 1:
+            errors.append(
+                f"completed Concept {concept_ref} requires exactly one "
+                "terminal disposition"
+            )
+
+    report_concepts = report.get("concepts")
+    if not isinstance(report_concepts, list):
+        errors.append("Creative success report concepts must be an array")
+        return
+    reported_by_id: dict[str, Mapping[str, Any]] = {}
+    for row in report_concepts:
+        if not isinstance(row, dict):
+            errors.append("Creative success report has an invalid Concept row")
+            continue
+        concept_id = row.get("concept_id")
+        if not isinstance(concept_id, str) or concept_id in reported_by_id:
+            errors.append("Creative success report has duplicate/invalid Concept IDs")
+            continue
+        reported_by_id[concept_id] = row
+    if set(reported_by_id) != set(concept_id_to_refs):
+        errors.append("Creative success report does not cover every Concept")
+        return
+    for concept_id, revision_refs in concept_id_to_refs.items():
+        row = reported_by_id[concept_id]
+        expected_revisions = sorted(revision_refs)
+        if row.get("revision_refs") != expected_revisions:
+            errors.append(
+                f"Creative success report revision closure is invalid: {concept_id}"
+            )
+        reported_dispositions = row.get("dispositions")
+        if not isinstance(reported_dispositions, list):
+            errors.append(
+                f"Creative success report dispositions are invalid: {concept_id}"
+            )
+            continue
+        reported_refs = [
+            item.get("disposition_ref")
+            for item in reported_dispositions
+            if isinstance(item, dict)
+        ]
+        expected_refs = sorted(
+            str(item.get("disposition_id"))
+            for item in dispositions
+            if item.get("concept_revision_ref") in revision_refs
+        )
+        if (
+            len(reported_refs) != len(reported_dispositions)
+            or sorted(str(item) for item in reported_refs) != expected_refs
+        ):
+            errors.append(
+                f"Creative success report disposition closure is invalid: {concept_id}"
+            )
+        latest_ref = expected_revisions[-1]
+        terminal = terminal_by_ref.get(latest_ref, [])
+        if len(terminal) == 1:
+            expected_outcome = terminal[0].get("outcome")
+            if expected_outcome == "eliminated":
+                expected_outcome = "c4_eliminated"
+            if row.get("terminal_outcome") != expected_outcome:
+                errors.append(
+                    f"Creative success report terminal outcome is stale: {concept_id}"
+                )
+
+    batch_ref = _first_artifact_of_type(
+        state.get("artifacts", {})
+        if isinstance(state.get("artifacts"), dict)
+        else {},
+        "creative_human_review_batch",
+    )
+    batch_reason: str | None = None
+    if batch_ref is not None:
+        try:
+            batch_payload = json.loads(hub.read_artifact(batch_ref))
+        except (OSError, UnicodeError, json.JSONDecodeError, StateError):
+            batch_payload = None
+        if isinstance(batch_payload, dict):
+            candidate_reason = batch_payload.get("skip_reason")
+            if isinstance(candidate_reason, str):
+                batch_reason = candidate_reason
+    if report.get("empty_batch_skip_reason") != batch_reason:
+        errors.append("Creative success report empty-batch reason is stale")
+    if zero_reason in {
+        "no_concepts_generated",
+        "all_candidates_failed_hook",
+        "shortlist_empty",
+    } and batch_reason != zero_reason:
+        errors.append("zero-Idea report does not match its empty review batch")
+    if zero_reason == "all_human_rejected" and batch_reason is not None:
+        errors.append("all_human_rejected cannot use an empty review batch")
+
+
+def _validate_memory_record_closure(
+    state: Mapping[str, Any],
+    artifacts: Mapping[str, Any],
+    concepts: Mapping[str, Mapping[str, Any]],
+    dispositions: list[dict[str, Any]],
+    final_ideas: Mapping[str, Mapping[str, Any]],
+    memory_record: Any,
+    report: Mapping[str, Any],
+    *,
+    report_sha256: str | None,
+    errors: list[str],
+) -> None:
+    if (
+        memory_record.source_run_id != state.get("run_id")
+        or memory_record.source_report_artifact_id
+        != "creative-idea-report"
+        or memory_record.source_report_sha256 != report_sha256
+        or memory_record.zero_reason_code != report.get("zero_reason_code")
+    ):
+        errors.append("Creative Memory Record report/run binding is invalid")
+
+    terminal_by_ref = {
+        concept_ref: [
+            row
+            for row in dispositions
+            if row.get("concept_revision_ref") == concept_ref
+            and row.get("terminal") is True
+        ]
+        for concept_ref in concepts
+    }
+    promoted_sources = {
+        concept_ref
+        for concept_ref, rows in terminal_by_ref.items()
+        if len(rows) == 1
+        and rows[0].get("outcome") == "promoted_to_final"
+        and rows[0].get("target_ref") in final_ideas
+    }
+    expected_sources = (set(concepts) - promoted_sources) | set(final_ideas)
+    actual_sources = {
+        entry.source_candidate_ref for entry in memory_record.entries
+    }
+    if actual_sources != expected_sources:
+        errors.append("Creative Memory Record source count/closure is invalid")
+    final_entries = {
+        entry.source_candidate_ref
+        for entry in memory_record.entries
+        if entry.source_kind == "final_idea"
+    }
+    if final_entries != set(final_ideas):
+        errors.append("Creative Memory Record Final Idea closure is invalid")
+    for entry in memory_record.entries:
+        record = artifacts.get(entry.source_candidate_ref)
+        expected_type = (
+            "creative_final_idea"
+            if entry.source_kind == "final_idea"
+            else "creative_concept"
+        )
+        if (
+            not isinstance(record, dict)
+            or record.get("artifact_type") != expected_type
+            or record.get("sha256") != entry.source_candidate_sha256
+        ):
+            errors.append(
+                "Creative Memory Record has a stale source: "
+                f"{entry.source_candidate_ref}"
+            )
