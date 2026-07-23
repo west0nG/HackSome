@@ -42,6 +42,7 @@ class CodexConfig:
         "multi_agent_v2",
         "enable_fanout",
         "enable_mcp_apps",
+        "plugins",
         "plugin_sharing",
         "browser_use",
         "browser_use_external",
@@ -50,7 +51,10 @@ class CodexConfig:
         "image_generation",
         "in_app_browser",
     )
-    config_overrides: tuple[str, ...] = ("project_doc_max_bytes=0",)
+    config_overrides: tuple[str, ...] = (
+        "project_doc_max_bytes=0",
+        "skills.include_instructions=false",
+    )
 
     def __post_init__(self) -> None:
         if not isinstance(self.executable, str) or not self.executable.strip():

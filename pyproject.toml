@@ -9,6 +9,7 @@ description = "A local Codex orchestrator for evidence-backed hackathon ideas"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "jsonschema>=4.23,<5",
   "PyYAML>=6.0,<7",
 ]
 
@@ -24,4 +25,3 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 hacksome = ["prompts/*.md", "schemas/*.json"]
-

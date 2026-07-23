@@ -17,6 +17,8 @@
 
 Use only one Research document, its Audience record, verification rules, and—only for blind recheck mode—the local evidence ids to recheck. No earlier Verification result is allowed. Do not inspect sibling verifier files or search for replacement evidence.
 
+In `blind_recheck` mode, the assigned input scope is `routing.assigned_recheck_evidence_ids`. This input is distinct from the output field `recheck_evidence_ids` described below.
+
 {context_manifest}
 
 ## Task

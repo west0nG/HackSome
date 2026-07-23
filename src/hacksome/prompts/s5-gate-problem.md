@@ -15,7 +15,7 @@
 
 ## Context Allowlist
 
-Use only one Problem revision, its cited Research and Verification documents, allowlisted same-Audience counterevidence or independent support, the absolute threshold, and the current evidence-loop count. No previous Gateway document is allowed in any mode. Do not read another Problem, any Idea, competition, `ComplianceView`, Red Team, or Feasibility artifact.
+Use only one Problem revision, the `DiscoveryView`, and the exact canonical Research and Verification subset explicitly cited in that Problem's `Evidence` or `Counterevidence and Uncertainty` body sections, plus the absolute threshold and current evidence-loop count. No uncited same-Audience file is available merely because it appeared in the Problem's front-matter `source_refs`. No previous Gateway document is allowed in any mode. Do not read another Problem, any Idea, competition, `ComplianceView`, Red Team, or Feasibility artifact.
 
 {context_manifest}
 
@@ -23,13 +23,15 @@ Use only one Problem revision, its cited Research and Verification documents, al
 
 Independently test this Problem against all five absolute thresholds:
 
-1. The described user and scenario are observed rather than inferred by an Agent.
+1. The described user and scenario are observed rather than inferred by an Agent, and the Problem directly belongs to the challenge theme or problem domains in `DiscoveryView`. Merely appearing in the challenge text does not make hackathon participants, judges, submission mechanics, public-data authors, or other meta roles valid product users unless improving that role is itself part of the challenge domain.
 2. The Problem recurs, or a one-off has a concrete severe consequence.
 3. Users already pay with time, money, risk, or a materially awkward workaround.
 4. Software could materially improve the situation rather than add only another interface; do not invent the software.
 5. The document does not disguise an unverified assumption, isolated extreme, or preferred solution as a Problem fact.
 
 For each threshold, output exactly one routing result: `met`, `not_met`, or `insufficient_evidence`, with file-and-local-id evidence. A recurring Problem normally needs two independently verified first-hand sources. A severe one-off may meet the floor with one verified first-hand source demonstrating a concrete consequence. This is a minimum, never a score or quota.
+
+Judge only from the cited subset provided in the manifest. Do not assume an uncited Research or Verification document exists, reconstruct omitted evidence from the Problem's front matter, or treat a prose claim without its paired Research id and Verification as verified.
 
 Set the document status and Decision to exactly one of:
 
@@ -54,7 +56,7 @@ Write exactly one immutable Markdown document at `{output_target}`. Its YAML fro
 - `status` exactly `pass`, `needs_evidence`, or `reject_candidate`
 - `revision: 1`
 - `created_by_session: {session_marker}` and `updated_by_session: {session_marker}`
-- `source_refs` limited to the assigned Problem, Research, and Verification inputs
+- `source_refs` limited to the assigned Problem, `DiscoveryView`, and the exact cited Research/Verification subset supplied by the controller
 - `supersedes: null`
 - `failed_thresholds` containing only threshold ids `T1` through `T5` whose result is `not_met`; use an empty list when none failed
 - `evidence_gaps` containing concrete searchable gaps for every `insufficient_evidence` result; use an empty list when no evidence is missing

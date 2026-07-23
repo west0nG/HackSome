@@ -29,6 +29,7 @@ class RepairThenScopeRunner(ScriptedRunner):
         )
         if stage == "S9":
             metadata["status"] = {
+                "draft_screen": "repairable",
                 "initial": "repairable",
                 "product_recheck": "pass",
                 "scope_recheck": "pass",
@@ -75,13 +76,13 @@ class UsefulIdeaRepairLoopTests(unittest.IsolatedAsyncioTestCase):
         idea_ref = str(final["idea_ref"])
 
         stage_modes = Counter(
-            (task.stage, str(task.data.get("mode")))
-            for task in state.tasks.values()
+            (task.stage, str(task.data.get("mode"))) for task in state.tasks.values()
         )
         self.assertEqual(stage_modes[("S8", "competition_revision")], 1)
         self.assertEqual(stage_modes[("S8", "product_repair")], 1)
         self.assertEqual(stage_modes[("S8", "scope_reduction")], 1)
         self.assertEqual(stage_modes[("S8", "competition_followup")], 0)
+        self.assertEqual(stage_modes[("S9", "draft_screen")], 1)
         self.assertEqual(stage_modes[("S9", "initial")], 1)
         self.assertEqual(stage_modes[("S9", "product_recheck")], 1)
         self.assertEqual(stage_modes[("S9", "scope_recheck")], 1)
@@ -113,9 +114,9 @@ class UsefulIdeaRepairLoopTests(unittest.IsolatedAsyncioTestCase):
         review_tasks = [
             task for task in state.tasks.values() if task.stage in {"S9", "S10"}
         ]
-        self.assertEqual(len(review_tasks), 5)
-        self.assertEqual(len({task.task_id for task in review_tasks}), 5)
-        self.assertEqual(len({task.session_id for task in review_tasks}), 5)
+        self.assertEqual(len(review_tasks), 6)
+        self.assertEqual(len({task.task_id for task in review_tasks}), 6)
+        self.assertEqual(len({task.session_id for task in review_tasks}), 6)
         self.assertNotIn(None, {task.session_id for task in review_tasks})
         self.assertTrue(all(len(task.outputs) == 1 for task in review_tasks))
         self.assertEqual(
@@ -127,29 +128,30 @@ class UsefulIdeaRepairLoopTests(unittest.IsolatedAsyncioTestCase):
             (task.stage, str(task.data["mode"])): task for task in review_tasks
         }
         self.assertTrue(
-            review_by_mode[("S9", "initial")].outputs[0].endswith(
-                "/red-team-001.md"
-            )
+            review_by_mode[("S9", "draft_screen")]
+            .outputs[0]
+            .endswith("/draft-screen-003.md")
         )
         self.assertTrue(
-            review_by_mode[("S9", "product_recheck")].outputs[0].endswith(
-                "/red-team-002.md"
-            )
+            review_by_mode[("S9", "initial")].outputs[0].endswith("/red-team-001.md")
         )
         self.assertTrue(
-            review_by_mode[("S9", "scope_recheck")].outputs[0].endswith(
-                "/red-team-003.md"
-            )
+            review_by_mode[("S9", "product_recheck")]
+            .outputs[0]
+            .endswith("/red-team-002.md")
         )
         self.assertTrue(
-            review_by_mode[("S10", "initial")].outputs[0].endswith(
-                "/review-001.md"
-            )
+            review_by_mode[("S9", "scope_recheck")]
+            .outputs[0]
+            .endswith("/red-team-003.md")
         )
         self.assertTrue(
-            review_by_mode[("S10", "scope_recheck")].outputs[0].endswith(
-                "/review-002.md"
-            )
+            review_by_mode[("S10", "initial")].outputs[0].endswith("/review-001.md")
+        )
+        self.assertTrue(
+            review_by_mode[("S10", "scope_recheck")]
+            .outputs[0]
+            .endswith("/review-002.md")
         )
 
         for task in review_tasks:
@@ -173,7 +175,10 @@ class UsefulIdeaRepairLoopTests(unittest.IsolatedAsyncioTestCase):
                 }
                 self.assertEqual(len(red_team_refs), 1)
                 self.assertFalse(
-                    any(reference.startswith("feasibility/") for reference in source_refs)
+                    any(
+                        reference.startswith("feasibility/")
+                        for reference in source_refs
+                    )
                 )
 
         idea_decisions = [
@@ -218,6 +223,7 @@ class UsefulIdeaRepairLoopTests(unittest.IsolatedAsyncioTestCase):
         report = report_path.read_text(encoding="utf-8")
         self.assertIn("Repair workers", report)
         self.assertIn("voice-note-to-work-order", report)
+        self.assertIn("draft-screen-003.md", report)
         self.assertNotIn("No Idea passed", report)
         self.assertEqual(validate_run(workflow.run_dir), [])
 

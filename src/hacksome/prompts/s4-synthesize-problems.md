@@ -27,6 +27,12 @@ Only `supported` evidence may independently carry a positive claim. `partially_s
 
 Describe only the user's situation, problem, consequence, cost, risk, and workaround. Do not propose a product or decide whether the Problem passes.
 
+Every support or counterevidence citation must be one single Markdown bullet containing exactly one canonical Research path, that Research document's local Evidence id, and every corresponding canonical Verification path used for that item. Use this form:
+
+`- Claim text: research/<audience-id>/<researcher-id>.md#E-001 | verification/<audience-id>/<researcher-id>/verifier-001.md`
+
+The equivalent older form with the local id immediately after the Research path is also accepted, but do not split one citation across lines. When `verifier-001` requests a blind recheck for the cited id, cite both `verifier-001.md` and `verifier-002.md`; otherwise do not add an unrelated verifier. Cite only canonical run paths, never a copied `context/`, staging, excerpt, or summary file. A file's presence in front-matter `source_refs` is not a citation.
+
 ## Stage Boundary
 
 - Do not browse, create an Idea, discuss features, or use Sponsor technology.
@@ -73,11 +79,11 @@ Record evidence of recurrence or a concrete severe one-off consequence without a
 
 ## Evidence
 
-For every positive claim, cite the Research path plus local Evidence id and its Verification path.
+For every positive claim, use the exact per-item citation form above. Include only evidence actually used by this Problem.
 
 ## Counterevidence and Uncertainty
 
-Keep contradictions, weak signals, and unverified assumptions visible.
+Keep contradictions, weak signals, and unverified assumptions visible. Cite every external counterexample or uncertainty signal with the same Research-id-Verification form; counterevidence citations are first-class inputs to the Gateway even when the positive Evidence section has none.
 
 ## Search Gaps
 

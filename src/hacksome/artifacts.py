@@ -57,6 +57,7 @@ COMMON_MANIFEST_BINDING_FIELDS = (
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
 _SAFE_FRAGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _HEADING = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*$")
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
@@ -275,7 +276,6 @@ _SPECS = {
             "researcher_id",
             "verifier_id",
             "verification_round",
-            "recheck_evidence_ids",
         ),
     ),
     "S4": _spec(
@@ -518,6 +518,8 @@ def _validate_manifest_binding(
     required = list(required_manifest_binding_fields(spec))
     if spec.stage == "S4" and revision is not None and revision > 1:
         required.extend(("artifact_id", "problem_id"))
+    if spec.stage == "S9" and normalized.get("review_mode") == "draft_screen":
+        required.extend(("reviewed_idea_revision", "reviewed_idea_sha256"))
     missing = [key for key in dict.fromkeys(required) if key not in normalized]
     if missing:
         raise ArtifactValidationError(
@@ -879,6 +881,32 @@ def _validate_routing_consistency(
                     "competitor_research_gaps must be empty when "
                     "needs_competitor_research is false"
                 )
+    elif spec.stage == "S9":
+        review_mode = metadata.get("review_mode")
+        reviewed_revision = metadata.get("reviewed_idea_revision")
+        reviewed_sha256 = metadata.get("reviewed_idea_sha256")
+        if review_mode == "draft_screen":
+            if (
+                isinstance(reviewed_revision, bool)
+                or not isinstance(reviewed_revision, int)
+                or reviewed_revision < 1
+            ):
+                issues.append(
+                    "draft_screen reviewed_idea_revision must be a positive integer"
+                )
+            if not isinstance(reviewed_sha256, str) or not _SHA256.fullmatch(
+                reviewed_sha256
+            ):
+                issues.append(
+                    "draft_screen reviewed_idea_sha256 must be a lowercase SHA-256"
+                )
+        elif (
+            "reviewed_idea_revision" in metadata
+            or "reviewed_idea_sha256" in metadata
+        ):
+            issues.append(
+                "reviewed Idea revision/hash fields are allowed only for draft_screen"
+            )
 
 
 def _path_component(metadata: Mapping[str, Any], key: str) -> str:

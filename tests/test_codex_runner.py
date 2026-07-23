@@ -103,8 +103,27 @@ if mode == "fail_once" and attempt == 1:
     print("temporary transport failure", file=sys.stderr, flush=True)
     raise SystemExit(7)
 
+if mode == "invalid_request":
+    print(json.dumps({"type": "thread.started", "thread_id": "thread-invalid"}), flush=True)
+    print(json.dumps({
+        "type": "error",
+        "message": json.dumps({
+            "type": "error",
+            "error": {
+                "type": "invalid_request_error",
+                "code": "invalid_json_schema",
+                "message": "unsupported schema keyword",
+            },
+            "status": 400,
+        }),
+    }), flush=True)
+    raise SystemExit(1)
+
 if mode == "large_event":
     print(json.dumps({"type": "item.completed", "payload": "x" * (128 * 1024)}), flush=True)
+
+if mode == "transient_error_then_success":
+    print(json.dumps({"type": "error", "message": "Reconnecting... 1/5"}), flush=True)
 
 thread_id = "thread-retry" if is_resume else f"thread-{cwd.name}"
 print(json.dumps({"type": "thread.started", "thread_id": thread_id}), flush=True)
@@ -194,10 +213,17 @@ class CodexRunnerTests(unittest.IsolatedAsyncioTestCase):
             if value == "--config"
         ]
         self.assertIn('web_search="live"', config_values)
+        self.assertIn("skills.include_instructions=false", config_values)
         self.assertNotIn("--search", argv)
         self.assertIn("--ask-for-approval", argv)
         self.assertIn("never", argv)
         self.assertIn("workspace-write", argv)
+        disabled_features = [
+            argv[index + 1]
+            for index, value in enumerate(argv[:-1])
+            if value == "--disable"
+        ]
+        self.assertIn("plugins", disabled_features)
         self.assertEqual(call["cwd"], str(task.cwd.resolve()))
         self.assertEqual(call["prompt"], task.prompt)
         self.assertNotIn(task.prompt, argv)
@@ -234,6 +260,95 @@ class CodexRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('web_search="disabled"', config_values)
         self.assertNotIn('web_search="live"', config_values)
 
+    async def test_invalid_json_schema_fails_before_spawning_codex(self) -> None:
+        self.schema.write_text(
+            json.dumps({"type": "not-a-json-schema-type"}),
+            encoding="utf-8",
+        )
+        runner = CodexRunner(self.config())
+
+        with self.fake_environment():
+            with self.assertRaisesRegex(ValueError, "not valid JSON Schema"):
+                await runner.run(self.task())
+
+        self.assertFalse(self.calls.exists())
+
+    async def test_nonempty_global_agents_file_fails_before_spawn(self) -> None:
+        codex_home = self.root / "isolated-codex-home"
+        codex_home.mkdir()
+        (codex_home / "AGENTS.md").write_text(
+            "inject this into every session\n",
+            encoding="utf-8",
+        )
+        runner = CodexRunner(self.config())
+
+        with self.fake_environment(CODEX_HOME=str(codex_home)):
+            with self.assertRaisesRegex(
+                ValueError, "requires no global instructions"
+            ):
+                await runner.run(self.task())
+
+        self.assertFalse(self.calls.exists())
+
+    async def test_incomplete_saved_isolation_config_fails_before_spawn(self) -> None:
+        defaults = CodexConfig()
+        runner = CodexRunner(
+            self.config(
+                disabled_features=tuple(
+                    feature
+                    for feature in defaults.disabled_features
+                    if feature != "plugins"
+                ),
+                config_overrides=tuple(
+                    override
+                    for override in defaults.config_overrides
+                    if override != "skills.include_instructions=false"
+                ),
+            )
+        )
+
+        with self.fake_environment():
+            with self.assertRaisesRegex(
+                ValueError, "stage isolation configuration is incomplete"
+            ):
+                await runner.run(self.task())
+
+        self.assertFalse(self.calls.exists())
+
+    async def test_whitespace_only_global_agents_file_is_allowed(self) -> None:
+        codex_home = self.root / "isolated-codex-home"
+        codex_home.mkdir()
+        (codex_home / "AGENTS.md").write_text("  \n", encoding="utf-8")
+        runner = CodexRunner(self.config())
+
+        with self.fake_environment(CODEX_HOME=str(codex_home)):
+            result = await runner.run(self.task())
+
+        self.assertTrue(result.success)
+
+    async def test_schema_invalid_last_message_is_rejected(self) -> None:
+        self.schema.write_text(
+            json.dumps(
+                {
+                    "type": "object",
+                    "properties": {"status": {"const": "completed"}},
+                    "required": ["status"],
+                }
+            ),
+            encoding="utf-8",
+        )
+        runner = CodexRunner(self.config())
+
+        with self.fake_environment():
+            result = await runner.run(self.task())
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.status, CodexRunStatus.FAILED)
+        self.assertIsNotNone(result.error)
+        assert result.error is not None
+        self.assertEqual(result.error.kind, CodexFailureKind.INVALID_OUTPUT)
+        self.assertIn("failed output schema", result.error.message)
+
     async def test_large_jsonl_event_exceeds_asyncio_default_line_limit(self) -> None:
         runner = CodexRunner(self.config())
 
@@ -251,6 +366,16 @@ class CodexRunnerTests(unittest.IsolatedAsyncioTestCase):
             if record["event"]["type"] == "item.completed"
         )
         self.assertGreater(len(large_event["payload"]), 64 * 1024)
+
+    async def test_terminal_completion_overrides_transient_reconnect_error(self) -> None:
+        runner = CodexRunner(self.config(infrastructure_retries=1))
+
+        with self.fake_environment(FAKE_CODEX_MODE="transient_error_then_success"):
+            result = await runner.run(self.task())
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.attempts, 1)
+        self.assertEqual(len(self.read_calls()), 1)
 
     def test_subprocess_stream_limit_has_a_safe_minimum(self) -> None:
         with self.assertRaisesRegex(ValueError, "at least 65536"):
@@ -276,6 +401,55 @@ class CodexRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("thread-retry", second_argv[resume_index + 1 :])
         self.assertNotIn("--last", second_argv)
         self.assertEqual(calls[1]["prompt"], task.prompt)
+
+    async def test_invalid_request_is_not_retried(self) -> None:
+        runner = CodexRunner(self.config(infrastructure_retries=2))
+
+        with self.fake_environment(FAKE_CODEX_MODE="invalid_request"):
+            result = await runner.run(self.task())
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.attempts, 1)
+        self.assertIsNotNone(result.error)
+        assert result.error is not None
+        self.assertFalse(result.error.retryable)
+        self.assertEqual(len(self.read_calls()), 1)
+
+    async def test_unsupported_schema_keyword_is_rejected_before_spawn(self) -> None:
+        self.schema.write_text(
+            json.dumps(
+                {
+                    "type": "array",
+                    "uniqueItems": True,
+                    "items": {"type": "string"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        runner = CodexRunner(self.config())
+
+        with self.fake_environment():
+            with self.assertRaisesRegex(ValueError, "unsupported by Codex"):
+                await runner.run(self.task())
+
+        self.assertFalse(self.calls.exists())
+
+    async def test_schema_property_named_like_keyword_is_not_rejected(self) -> None:
+        self.schema.write_text(
+            json.dumps(
+                {
+                    "type": "object",
+                    "properties": {"uniqueItems": {"type": "string"}},
+                }
+            ),
+            encoding="utf-8",
+        )
+        runner = CodexRunner(self.config())
+
+        with self.fake_environment():
+            result = await runner.run(self.task())
+
+        self.assertTrue(result.success)
 
     async def test_explicit_resume_uses_requested_session(self) -> None:
         runner = CodexRunner(self.config())

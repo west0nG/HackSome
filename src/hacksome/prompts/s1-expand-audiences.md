@@ -23,7 +23,11 @@ Use only the `DiscoveryView` in this manifest. The full Challenge Brief and `Com
 
 Expand the challenge into relevant broad occupations, populations, communities, organization types, or life stages. A valid entry is at the natural level of “teacher,” “student,” or “independent developer”: it names who might be relevant without claiming what that person is doing.
 
-For each entry, provide a stable local `audience_id`, a concise name, its broad type, its direct relationship to the DiscoveryView, and aliases useful for later searches.
+Treat the `DiscoveryView`, including `explicit_audiences`, as clues rather than a list that must appear in the output. Include an audience only when the challenge theme or `problem_domains` independently ties that natural group to problems it directly experiences or participates in inside the domain.
+
+Do not include a role merely because the challenge mentions it as a participant, judge, organizer, submission actor, Q&A contact, Sponsor, evidence author, or public-data source. If a mentioned person also has a genuine role inside the problem domain, name that domain role instead of the meta role.
+
+For each entry, provide a stable local `audience_id`, a concise name, its broad type, its direct relationship to the challenge theme or `problem_domains`, and aliases useful for later searches. `direct_relevance` must explain that independent domain relationship; saying only that the prompt or `explicit_audiences` mentions the group is invalid.
 
 ## Forbidden Work
 

@@ -49,16 +49,22 @@ class _PromptSpec:
 
 _PROMPT_SPECS: dict[str, _PromptSpec] = {
     "S0": _PromptSpec("hacksome.s0.parse-challenge", "1", "s0-parse-challenge.md"),
-    "S1": _PromptSpec("hacksome.s1.expand-audiences", "1", "s1-expand-audiences.md"),
+    "S1": _PromptSpec("hacksome.s1.expand-audiences", "2", "s1-expand-audiences.md"),
     "S2": _PromptSpec("hacksome.s2.research-evidence", "1", "s2-research-evidence.md"),
     "S3": _PromptSpec("hacksome.s3.verify-evidence", "1", "s3-verify-evidence.md"),
-    "S4": _PromptSpec("hacksome.s4.synthesize-problems", "1", "s4-synthesize-problems.md"),
-    "S5": _PromptSpec("hacksome.s5.gate-problem", "1", "s5-gate-problem.md"),
+    "S4": _PromptSpec(
+        "hacksome.s4.synthesize-problems", "2", "s4-synthesize-problems.md"
+    ),
+    "S5": _PromptSpec("hacksome.s5.gate-problem", "3", "s5-gate-problem.md"),
     "S6": _PromptSpec("hacksome.s6.generate-ideas", "1", "s6-generate-ideas.md"),
-    "S7": _PromptSpec("hacksome.s7.research-competitors", "1", "s7-research-competitors.md"),
+    "S7": _PromptSpec(
+        "hacksome.s7.research-competitors", "1", "s7-research-competitors.md"
+    ),
     "S8": _PromptSpec("hacksome.s8.revise-idea", "1", "s8-revise-idea.md"),
-    "S9": _PromptSpec("hacksome.s9.red-team-idea", "1", "s9-red-team-idea.md"),
-    "S10": _PromptSpec("hacksome.s10.build-feasibility", "1", "s10-build-feasibility.md"),
+    "S9": _PromptSpec("hacksome.s9.red-team-idea", "5", "s9-red-team-idea.md"),
+    "S10": _PromptSpec(
+        "hacksome.s10.build-feasibility", "1", "s10-build-feasibility.md"
+    ),
 }
 
 _STAGE_ALIASES = {
@@ -161,7 +167,6 @@ _FORBIDDEN_CONTEXT_MARKERS: dict[str, frozenset[str]] = {
     "S5": frozenset(
         {
             "challenge_brief",
-            "discovery_view",
             "compliance_view",
             "problem_gateway",
             "idea",
@@ -299,9 +304,7 @@ class PromptRenderer:
         _normalize_stage(stage)
         return _COMMON_CALLER_VARIABLES
 
-    def render(
-        self, stage: object, variables: Mapping[str, object]
-    ) -> RenderedPrompt:
+    def render(self, stage: object, variables: Mapping[str, object]) -> RenderedPrompt:
         canonical_stage = _normalize_stage(stage)
         if not isinstance(variables, Mapping):
             raise TypeError("variables must be a mapping")
@@ -334,7 +337,9 @@ class PromptRenderer:
 
         context = variables["context_manifest"]
         _validate_context_boundary(canonical_stage, variables["mode"], context)
-        rendered_values = {key: _display_value(value) for key, value in variables.items()}
+        rendered_values = {
+            key: _display_value(value) for key, value in variables.items()
+        }
         rendered_values["common_contract"] = common.rstrip()
 
         try:
@@ -492,7 +497,9 @@ def _context_markers(value: object) -> set[str]:
                 if key_marker is not None and key not in {"type", "kind"}:
                     markers.add(key_marker)
                 if key in {"artifact_type", "artifact_kind", "context_type"}:
-                    marker = _TYPE_MARKERS.get(str(child).strip().lower().replace("-", "_"))
+                    marker = _TYPE_MARKERS.get(
+                        str(child).strip().lower().replace("-", "_")
+                    )
                     if marker is not None:
                         markers.add(marker)
                 elif key in {"path", "file", "relative_path", "artifact_path"}:
