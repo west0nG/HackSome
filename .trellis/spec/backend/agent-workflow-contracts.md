@@ -109,7 +109,11 @@ No prompt may reference a downstream review or candidate that does not yet
 exist. The Idea Generator MUST NOT receive the Gateway review text or the Idea
 Red Team's decision rubric. Passing only the accepted Problem prevents the
 Generator from writing directly to the reviewer's checklist while the Hub
-retains the Gateway artifact for process lineage.
+retains the Gateway artifact for process lineage. Its own Prompt supplies only
+a high-level product identity: design for ongoing real-world use, ensure the
+product remains meaningful after a presentation ends, and treat presentation
+or submission requirements as delivery constraints rather than the reason for
+the product.
 
 ## 5. Structured-output boundary
 
@@ -229,8 +233,8 @@ JSON decision is authoritative for routing; Markdown cannot override it.
 The Idea Red Team is independent and actively tries to disprove the Idea as a
 real product. It reconstructs the actual use: the user and trigger, authentic
 input or access, product action, next step, and concrete change for the user.
-It judges from the perspective of an experienced product owner, named user, and
-skeptical buyer rather than rewarding hackathon presentation quality.
+It reasons from the perspective of an experienced product owner, named user,
+and skeptical buyer, and ignores how convincing the description sounds.
 
 It rejects when:
 

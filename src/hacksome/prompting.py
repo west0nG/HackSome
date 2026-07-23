@@ -58,10 +58,10 @@ _SPECS = {
         "hacksome.idea.problem-gateway", "2", "problem-gateway.md", "review"
     ),
     "idea-generate": _PromptSpec(
-        "hacksome.idea.idea-generate", "3", "idea-generate.md", "candidates"
+        "hacksome.idea.idea-generate", "4", "idea-generate.md", "candidates"
     ),
     "idea-red-team": _PromptSpec(
-        "hacksome.idea.idea-red-team", "2", "idea-red-team.md", "review"
+        "hacksome.idea.idea-red-team", "3", "idea-red-team.md", "review"
     ),
 }
 

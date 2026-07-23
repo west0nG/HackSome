@@ -54,7 +54,7 @@ class PromptingTests(unittest.TestCase):
                     rendered.text,
                 )
                 self.assertNotIn("`title`", rendered.text)
-                expected_version = "2" if stage == "problem-write" else "3"
+                expected_version = "2" if stage == "problem-write" else "4"
                 self.assertEqual(rendered.template_version, expected_version)
 
     def test_research_reconstructs_situations_instead_of_collecting_facts(self) -> None:
@@ -83,22 +83,31 @@ class PromptingTests(unittest.TestCase):
             "idea-generate",
             (("PASSED_PROBLEM", "# Problem\n\nReal"),),
         )
-        self.assertEqual(rendered.template_version, "3")
+        self.assertEqual(rendered.template_version, "4")
         self.assertNotIn("Felt Value", rendered.text)
         self.assertNotIn("End-to-End User Flow", rendered.text)
         self.assertNotIn("Demo Scope", rendered.text)
         self.assertIn("Product Experience", rendered.text)
         self.assertIn("First Real Version", rendered.text)
+        self.assertIn("stand on its own after any presentation ends", rendered.text)
+        self.assertIn("delivery constraints, not the reason", rendered.text)
+        self.assertNotIn("fake, mock, or hand-curated data", rendered.text)
+        self.assertNotIn("uncontrolled person", rendered.text)
+        self.assertNotIn("unavailable private data", rendered.text)
 
     def test_red_team_rejects_demo_only_products(self) -> None:
         rendered = render_prompt(
             "idea-red-team",
             (("IDEA", "# Idea\n\nA polished concept"),),
         )
-        self.assertEqual(rendered.template_version, "2")
+        self.assertEqual(rendered.template_version, "3")
         self.assertIn("fake, mock, or hand-curated data", rendered.text)
         self.assertIn("possible to demonstrate", rendered.text)
         self.assertIn("product on authentic inputs", rendered.text)
+        lowered = rendered.text.lower()
+        self.assertNotIn("hackathon", lowered)
+        self.assertNotIn("judge", lowered)
+        self.assertNotIn("pitch", lowered)
 
 
 if __name__ == "__main__":

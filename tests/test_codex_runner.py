@@ -488,7 +488,7 @@ class CodexRunnerTests(unittest.IsolatedAsyncioTestCase):
         runner = CodexRunner(self.config())
         # Leave enough startup time for the fake process to install its TERM
         # handler before exercising the runner's timeout path.
-        task = self.task(timeout_seconds=0.4)
+        task = self.task(timeout_seconds=0.8)
 
         with self.fake_environment(
             FAKE_CODEX_MODE="timeout",
