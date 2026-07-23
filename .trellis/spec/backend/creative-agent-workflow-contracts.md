@@ -82,6 +82,20 @@ FinalizationCoordinator(hub).replay()
 - `finalizing`：C7 manifest 已冻结但尚未完成发布；
 - `completed`：所有 C7 artifact 与 completion event 已闭合。
 
+C2 Agent envelope 只包含 `territory_markdown` 与 `atoms[].markdown`。其中
+Atom 的 `## Territory` 是给人和后续 Agent 阅读的自然语言语义，不承载内部
+引用。C3 的 `CURRENT_ATOM_INDEX` 必须由 Controller 渲染为：
+
+```text
+## creative-atom-t01-01
+
+Territory ref: creative-territory-01
+
+<exact Atom Markdown>
+```
+
+Agent 不生成、猜测或从 `task_id` 推导 Territory/Atom 稳定 ID。
+
 ### CLI
 
 ```text
@@ -136,6 +150,14 @@ catalog 与 Memory Snapshot，不能采用当前 package 默认值替换旧 run 
   恰好 1、C6C feedback revision ≤1。
 - C6B 使用 categorical include/hold/exclude 与 controller round-robin；
   不允许模型 1–10 打分、Top-K 排名或 curator 改写 primary territory。
+- C2 fanout 的 slot 在调用 Agent 前已确定，但内部 Territory ID 不注入 C2
+  Prompt，也不要求 Atom Markdown 回显。Controller 发布 Atom 时必须同时绑定
+  Atom ID、`source_refs=(territory_ref,)`、`metadata.territory_ref`、
+  `territory_slot` 与 `atom_slot`；C3 只能从 Controller 生成的显式索引读取
+  Atom→Territory 映射。
+- 离线 validator 必须证明 Atom ID 中的 slot、metadata slot/ref、唯一
+  Territory source ref 与实际 `creative_territory` artifact 一致。正文中出现
+  或缺少 `creative-territory-*` 字符串都不能代替结构化谱系验证。
 
 ### 3.3 C6 人工评审
 
@@ -274,6 +296,7 @@ Idea Card、handoff、Memory Record、completion event 或 result IDs。manifest
 | Challenge 为空或 Brief 参数冲突 | 创建 run 前报错 |
 | Useful 传 Creative option，或反向 | 创建 run 前报错 |
 | frozen config/resource/snapshot hash 漂移 | fatal + partial；不调用下一 Agent |
+| Atom ID、metadata、source refs 或 Territory artifact 不一致 | 离线 validation 失败；不得依赖 Markdown 子串修复或放行 |
 | C5M optional task 失败 | 写匹配 diagnostic；保留成功 sibling；继续 base |
 | C5W/其他 fatal task 失败 | run failed + partial，不能伪装“无先例/空候选” |
 | base 与 challenger 均无 Hook pass | 空 batch + `all_candidates_failed_hook`，直接 C7 |
@@ -293,6 +316,8 @@ Idea Card、handoff、Memory Record、completion event 或 result IDs。manifest
 
 - Good：base Concept 先独立生成；C5M 从冻结历史生成一个机制变换 challenger；
   二者用相同 C4/C5W 标准，最终报告披露来源和变化。
+- Good：C2 Atom 用自然语言说明“仪式化暂停”所属的创意空间；Controller 在
+  C3 索引中另行给出 `creative-atom-t01-01 → creative-territory-01`。
 - Good：两位 reviewer 独立复述，Percy 只批准一个相关 fragment；C6C Prompt
   不含未批准评论，报告仍完整审计所有 receipt ref。
 - Base：没有历史、`--idea-memory off` 或所有 Concept 被淘汰；流程仍确定性
@@ -300,6 +325,8 @@ Idea Card、handoff、Memory Record、completion event 或 result IDs。manifest
 - Base：manifest 发布到一半进程退出；下一次 resume 不调用 renderer，最终
   bytes/ID/timestamp 与 manifest 完全一致。
 - Bad：C3 Prompt 含旧 Idea Card 或 Memory cue；测试必须失败。
+- Bad：测试 runner 根据不可见的 `task_id` 给 C2 Markdown 偷塞
+  `creative-territory-01`，从而掩盖真实 Prompt 没有提供的后置条件。
 - Bad：把 missing/failed Agent task 当成 `candidates=[]`；必须 failed。
 - Bad：用 1–10 总分选 Top-K，再让人工只确认；这违反 C6 categorical +
   human curation 合同。
@@ -311,6 +338,9 @@ Idea Card、handoff、Memory Record、completion event 或 result IDs。manifest
 默认质量门必须离线，不调用 Codex 或网络，并断言：
 
 - C0–C6 Prompt allowlist、fresh sessions、web policy、稳定 fanout ID；
+- C2 fixture 使用不含内部 ID 的自然语言 `Territory`；C3 Prompt 显式包含
+  Controller 生成的 Atom→Territory 映射；篡改 Atom ID、metadata ref/slot、
+  source refs 或目标 artifact 任一项时 route validation 必须失败；
 - C4 matrix、三类 revision budget、disposition reason/evidence/target 闭包；
 - Memory off/empty/auto、source exclusion、snapshot cap/hash、Recall/Remix
   optional failure 与禁止递归；
@@ -387,4 +417,26 @@ approved = [
     for feedback_ref in resolution.approved_feedback_refs
 ]
 verify_fragment_hashes(approved)
+```
+
+### 错误：用模型正文承担 Controller 谱系
+
+```python
+if expected_territory_ref not in section_body(atom_markdown, "Territory"):
+    raise CreativeArtifactError("missing Territory ref")
+```
+
+### 正确：结构化绑定，并给下游显式索引
+
+```python
+hub.publish_artifact(
+    artifact_id=atom_id(territory_slot, atom_slot),
+    source_refs=(territory_ref,),
+    metadata={
+        "territory_ref": territory_ref,
+        "territory_slot": territory_slot,
+        "atom_slot": atom_slot,
+    },
+)
+atom_index = render_atom_index(hub, atom_refs)
 ```

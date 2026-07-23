@@ -98,17 +98,29 @@ class CreativeArtifactValidationTests(unittest.TestCase):
                 settings=SETTINGS,
             )
 
-    def test_c2_enforces_runtime_atom_cap_and_markdown_sections(self) -> None:
+    def test_c2_accepts_natural_territory_text_and_enforces_atom_cap(
+        self,
+    ) -> None:
         atom = {"markdown": _markdown("Atom", ATOM_HEADINGS)}
-        output = {
+        valid = {
             "territory_markdown": "# Territory\n\nA mechanism space.",
-            "atoms": [atom, atom],
+            "atoms": [atom],
         }
 
+        self.assertNotIn("creative-territory-", atom["markdown"])
+        self.assertEqual(
+            validate_creative_output(
+                C2_TERRITORY_EXPLORE,
+                valid,
+                settings=SETTINGS,
+            ),
+            valid,
+        )
+        over_limit = dict(valid, atoms=[atom, atom])
         with self.assertRaisesRegex(CreativeArtifactError, "configured"):
             validate_creative_output(
                 C2_TERRITORY_EXPLORE,
-                output,
+                over_limit,
                 settings=CreativeWorkflowSettings(max_atoms_per_territory=1),
             )
 

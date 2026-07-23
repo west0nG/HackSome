@@ -655,7 +655,7 @@ CreativeWorkflowSettings(
 
 ### 9.1 统一输出 Envelope
 
-Agent 只返回小型 JSON envelope；长文本放在 `markdown` 字段，稳定 ID、路径、revision 和 hash 由控制器补充。
+Agent 只返回小型 JSON envelope；长文本放在 `markdown` 字段，稳定 ID、路径、revision 和 hash 由控制器补充。模型正文不承担内部引用完整性：例如 C2 Atom 的 `Territory` section 是自然语言语义，不能靠其中是否出现 `creative-territory-*` 子串来建立谱系。
 
 候选列表必须保持生成顺序。JSON Schema 只检查形状，route semantic validator 继续检查标题、必需 section、数量上限、重复和引用。
 
@@ -667,7 +667,7 @@ Agent 只返回小型 JSON envelope；长文本放在 `markdown` 字段，稳定
 | C0 `creative-challenge-parse`           | 1                                 | 原始 Challenge                                                       | Challenge Brief + Constraint View               | 两份文档均合法才继续        |
 | C1 `creative-brief-normalize`           | 1                                 | Challenge、C0、Brief input/default                                   | Creative Brief                                  | 不暂停；合法即继续         |
 | C2 `creative-territory-explore`         | 6                                 | C0、C1、单个 Territory lens                                            | Territory + ≤3 Atoms                            | 保留所有合法输出          |
-| C3 `creative-concept-synthesize`        | 4                                 | C0、C1、全部 Atom index、单个 synthesis lens                              | 每 Session ≤3 Concepts + primary territory refs  | 合并并稳定去重           |
+| C3 `creative-concept-synthesize`        | 4                                 | C0、C1、Controller 生成且显式含 Atom→Territory ref 的全部 Atom index、单个 synthesis lens | 每 Session ≤3 Concepts + primary territory refs  | 合并并稳定去重           |
 | C4 `creative-cheap-hook-review`         | 每 Concept 2                       | C0 Constraint、C1、精确 Concept revision                               | 分类式 review                                      | 按一致性矩阵路由          |
 | C4R `creative-cheap-hook-repair`        | 最多每 Concept 1                     | 原 Concept + 两份 review + C0/C1                                      | 新 Concept revision                              | 再做两份 fresh review |
 | C5M-R `creative-memory-recall`          | 0 或 1                             | C0/C1、Atom index、base Concept disposition index、冻结 memory snapshot | ≤8 Inspiration Cues + current relations         | 无历史/disabled 时不调用 |
@@ -754,6 +754,14 @@ Creative Atom 必需 H2：
 - `Reveal`
 - `Aftertaste`
 - `Challenge Fit and Risks`
+
+`Territory` section 用自然语言说明该 Atom 所属的机制空间，不要求也不依赖模型
+回显 Controller 内部 ID。Controller 按 fanout slot 分配稳定 Territory/Atom ID，
+发布 Atom 时用 `source_refs`、`territory_ref`、`territory_slot` 与
+`atom_slot` 形成结构化绑定。给 C3 的 Atom index 必须显式渲染每个
+`Atom ref → Territory ref`，再附上原始 Atom Markdown；C3 不得从自然语言或
+`task_id` 猜测绑定。离线 validation 逐项复核 Atom ID、metadata、source refs
+和目标 Territory artifact，任何不一致都 fail closed。
 
 语义检查拒绝：
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import tempfile
 import unittest
 from datetime import UTC, datetime
@@ -32,6 +33,7 @@ from hacksome.creative.memory import (
 from hacksome.creative.workflow import (
     CreativeIdeaWorkflow,
     CreativeWorkflowError,
+    SYNTHESIS_LENSES,
 )
 from hacksome.models import CodexLogs, CodexResult, CodexRunStatus, CodexTask
 from hacksome.routes import inspect_run, validate_run
@@ -45,8 +47,13 @@ def _markdown(title: str, headings: tuple[str, ...], value: str) -> str:
     return f"# {title}\n\n{sections}\n"
 
 
-def _concept_markdown(slot: int, *, repaired: bool = False) -> str:
-    atom_ref = f"creative-atom-t{slot:02d}-01"
+def _concept_markdown(
+    slot: int,
+    *,
+    repaired: bool = False,
+    parent_atom_ref: str | None = None,
+) -> str:
+    atom_ref = parent_atom_ref or f"creative-atom-t{slot:02d}-01"
     values = {
         "Intended Reaction": f"Surprise {slot}",
         "One-sentence Hook": (
@@ -72,6 +79,38 @@ def _concept_markdown(slot: int, *, repaired: bool = False) -> str:
         f"## {heading}\n\n{values[heading]}" for heading in CONCEPT_HEADINGS
     )
     return f"# Echo {slot}{' Repaired' if repaired else ''}\n\n{sections}\n"
+
+
+def _prompt_block(prompt: str, name: str) -> str:
+    match = re.search(
+        rf"<BEGIN_{re.escape(name)}_(?P<digest>[0-9a-f]{{12}})>\n"
+        rf"(?P<body>.*?)\n"
+        rf"<END_{re.escape(name)}_(?P=digest)>",
+        prompt,
+        flags=re.DOTALL,
+    )
+    if match is None:
+        raise AssertionError(f"fixture requires visible {name} Prompt context")
+    return match.group("body")
+
+
+def _atom_lineage_from_prompt(prompt: str) -> tuple[tuple[str, str], ...]:
+    index = _prompt_block(prompt, "CURRENT_ATOM_INDEX")
+    lineage = tuple(
+        (match.group("atom_ref"), match.group("territory_ref"))
+        for match in re.finditer(
+            r"^## (?P<atom_ref>creative-atom-t[0-9]{2}-[0-9]{2})\n\n"
+            r"Territory ref: "
+            r"(?P<territory_ref>creative-territory-[0-9]{2})$",
+            index,
+            flags=re.MULTILINE,
+        )
+    )
+    if not lineage:
+        raise AssertionError(
+            "fixture requires Controller-authored Atom→Territory Prompt lineage"
+        )
+    return lineage
 
 
 def _hook_review(decision: str) -> dict[str, Any]:
@@ -186,10 +225,12 @@ class CreativeScriptedRunner:
         self.hook_mode = hook_mode
         self.memory_ref = memory_ref
         self.tasks: list[CodexTask] = []
+        self._tasks_by_id: dict[str, CodexTask] = {}
         self.completion_order: list[str] = []
 
     async def run(self, task: CodexTask) -> CodexResult:
         self.tasks.append(task)
+        self._tasks_by_id[task.task_id] = task
         if task.task_id.endswith("-01") or "-s01-" in task.task_id:
             await asyncio.sleep(0.02)
         if (
@@ -233,6 +274,7 @@ class CreativeScriptedRunner:
         )
 
     def _output(self, task_id: str) -> dict[str, Any]:
+        task = self._tasks_by_id[task_id]
         if task_id == "creative-c0-challenge-parse":
             return {
                 "challenge_brief_markdown": _markdown(
@@ -255,8 +297,8 @@ class CreativeScriptedRunner:
                 )
             }
         if task_id.startswith("creative-c2-territory-"):
-            slot = int(task_id.rsplit("-", 1)[1])
-            territory_ref = f"creative-territory-{slot:02d}"
+            lens = _prompt_block(task.prompt, "TERRITORY_LENS")
+            slot = DEFAULT_TERRITORY_LENSES.index(lens) + 1
             return {
                 "territory_markdown": (
                     f"# Territory {slot}\n\nA distinct interaction mechanism.\n"
@@ -266,23 +308,36 @@ class CreativeScriptedRunner:
                         "markdown": _markdown(
                             f"Atom {slot}",
                             ATOM_HEADINGS,
-                            f"Uses {territory_ref} through an opt-in gesture.",
+                            (
+                                "An opt-in gesture becomes a shared echo "
+                                f"for interaction lens {slot}."
+                            ),
                         )
                     }
                 ],
             }
         if task_id.startswith("creative-c3-synthesis-"):
-            slot = int(task_id.rsplit("-", 1)[1])
+            lens = _prompt_block(task.prompt, "SYNTHESIS_LENS")
+            lineage = _atom_lineage_from_prompt(task.prompt)
+            atom_ref, territory_ref = lineage[
+                SYNTHESIS_LENSES.index(lens) % len(lineage)
+            ]
+            atom_match = re.fullmatch(
+                r"creative-atom-t(?P<slot>[0-9]{2})-[0-9]{2}",
+                atom_ref,
+            )
+            if atom_match is None:
+                raise AssertionError("fixture received an invalid visible Atom ref")
+            slot = int(atom_match.group("slot"))
             return {
                 "concepts": [
                     {
-                        "markdown": _concept_markdown(slot),
-                        "primary_territory_ref": (
-                            f"creative-territory-{slot:02d}"
+                        "markdown": _concept_markdown(
+                            slot,
+                            parent_atom_ref=atom_ref,
                         ),
-                        "parent_atom_refs": [
-                            f"creative-atom-t{slot:02d}-01"
-                        ],
+                        "primary_territory_ref": territory_ref,
+                        "parent_atom_refs": [atom_ref],
                     }
                 ]
             }
@@ -295,8 +350,23 @@ class CreativeScriptedRunner:
                 return _hook_review("repairable")
             return _hook_review("pass")
         if task_id.startswith("creative-c4-repair-"):
-            slot = 1 if "-s01-" in task_id else 2
-            return {"markdown": _concept_markdown(slot, repaired=True)}
+            source = _prompt_block(task.prompt, "CONCEPT_REVISION")
+            atom_match = re.search(
+                r"creative-atom-t(?P<slot>[0-9]{2})-[0-9]{2}",
+                source,
+            )
+            if atom_match is None:
+                raise AssertionError(
+                    "fixture requires a visible source Parent Atom"
+                )
+            slot = int(atom_match.group("slot"))
+            return {
+                "markdown": _concept_markdown(
+                    slot,
+                    repaired=True,
+                    parent_atom_ref=atom_match.group(0),
+                )
+            }
         if task_id == "creative-c5m-memory-recall-01":
             if self.memory_ref is None:
                 raise AssertionError("Recall requires a configured memory ref")
@@ -521,6 +591,41 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("<BEGIN_MEMORY_CUE_", task.prompt)
                 self.assertNotIn("input:idea_memory", task.prompt)
 
+            c2_tasks = [
+                task
+                for task in runner.tasks
+                if task.task_id.startswith("creative-c2-territory-")
+            ]
+            self.assertEqual(len(c2_tasks), 2)
+            for task in c2_tasks:
+                slot = int(task.task_id.rsplit("-", 1)[1])
+                self.assertNotIn(
+                    f"creative-territory-{slot:02d}",
+                    task.prompt,
+                )
+                self.assertNotIn("ASSIGNED_TERRITORY_REF", task.prompt)
+
+            c3_tasks = [
+                task
+                for task in runner.tasks
+                if task.task_id.startswith("creative-c3-synthesis-")
+            ]
+            self.assertEqual(len(c3_tasks), 2)
+            for task in c3_tasks:
+                for territory_ref, atom_ref in zip(
+                    outcome.territory_refs,
+                    outcome.atom_refs,
+                    strict=True,
+                ):
+                    atom_markdown = workflow.hub.read_artifact(atom_ref)
+                    self.assertNotIn("creative-territory-", atom_markdown)
+                    self.assertIn(f"## {atom_ref}", task.prompt)
+                    self.assertIn(
+                        f"Territory ref: {territory_ref}",
+                        task.prompt,
+                    )
+                    self.assertIn(atom_markdown, task.prompt)
+
             state = workflow.hub.load_state()
             for task in early_tasks:
                 parent_refs = state["tasks"][task.task_id]["parent_refs"]
@@ -552,6 +657,92 @@ class CreativeWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(projection["concept_counts"]["base_generated"], 2)
             self.assertEqual(projection["concept_counts"]["hook_passed"], 2)
             self.assertEqual(projection["memory"]["status"], "disabled")
+
+    async def test_validate_rejects_c2_controller_lineage_tampering(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = CreativeWorkflowSettings(
+                territory_explorers=1,
+                max_atoms_per_territory=1,
+                concept_synthesizers=1,
+                max_concepts_per_synthesizer=1,
+                idea_memory_mode="off",
+                memory_remixers=0,
+                max_memory_challengers=0,
+            )
+            workflow = CreativeIdeaWorkflow.create(
+                "Keep Creative Atom lineage explicit and tamper-evident.",
+                directory,
+                settings=settings,
+                run_id="creative-c2-lineage",
+                runner=CreativeScriptedRunner(),
+            )
+            await workflow.execute_c0_c5()
+            self.assertEqual(validate_run(workflow.run_dir), [])
+            baseline = workflow.hub.load_state()
+            atom_ref = "creative-atom-t01-01"
+            territory_ref = "creative-territory-01"
+
+            scenarios = (
+                (
+                    "atom-metadata",
+                    "territory_ref metadata does not match its ID",
+                ),
+                (
+                    "atom-source-refs",
+                    "source_refs must bind exactly its metadata Territory",
+                ),
+                (
+                    "atom-id",
+                    "territory_ref metadata does not match its ID",
+                ),
+                (
+                    "atom-slot",
+                    "slot metadata does not match its ID",
+                ),
+                (
+                    "territory-artifact",
+                    "references no Creative Territory artifact",
+                ),
+                (
+                    "territory-slot",
+                    "slot metadata does not match its ID",
+                ),
+            )
+            for mutation, expected_error in scenarios:
+                with self.subTest(mutation=mutation):
+                    state = json.loads(json.dumps(baseline))
+                    if mutation == "atom-metadata":
+                        state["artifacts"][atom_ref]["metadata"][
+                            "territory_ref"
+                        ] = "creative-territory-02"
+                    elif mutation == "atom-source-refs":
+                        state["artifacts"][atom_ref]["source_refs"] = []
+                    elif mutation == "atom-id":
+                        atom_record = state["artifacts"].pop(atom_ref)
+                        state["artifacts"][
+                            "creative-atom-t02-01"
+                        ] = atom_record
+                    elif mutation == "atom-slot":
+                        state["artifacts"][atom_ref]["metadata"][
+                            "atom_slot"
+                        ] = 2
+                    elif mutation == "territory-artifact":
+                        state["artifacts"][territory_ref][
+                            "artifact_type"
+                        ] = "creative_constraint_view"
+                    else:
+                        state["artifacts"][territory_ref]["metadata"][
+                            "slot"
+                        ] = 2
+                    atomic_write_json(workflow.hub.state_path, state)
+
+                    errors = validate_run(workflow.run_dir)
+                    self.assertTrue(
+                        any(expected_error in error for error in errors),
+                        errors,
+                    )
 
     async def test_novelty_failure_is_fatal_and_never_publishes_empty_scan(
         self,

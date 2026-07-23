@@ -1513,7 +1513,21 @@ class CreativeIdeaWorkflow:
         constraint_ref: str,
         brief_ref: str,
     ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-        async def explore(slot: int, lens: str) -> tuple[int, dict[str, Any], str]:
+        assignments = tuple(
+            (slot, territory_id(slot), lens)
+            for slot, lens in enumerate(
+                DEFAULT_TERRITORY_LENSES[
+                    : int(self.settings.territory_explorers)
+                ],
+                start=1,
+            )
+        )
+
+        async def explore(
+            slot: int,
+            territory_ref_id: str,
+            lens: str,
+        ) -> tuple[int, str, dict[str, Any], str]:
             task_id = f"creative-c2-territory-{slot:02d}"
             output = await self._execute(
                 stage=C2_TERRITORY_EXPLORE,
@@ -1531,28 +1545,22 @@ class CreativeIdeaWorkflow:
                 ),
                 parent_refs=(challenge_ref, constraint_ref, brief_ref),
             )
-            return slot, output, task_id
+            return slot, territory_ref_id, output, task_id
 
         completed = await asyncio.gather(
             *(
-                explore(slot, lens)
-                for slot, lens in enumerate(
-                    DEFAULT_TERRITORY_LENSES[
-                        : int(self.settings.territory_explorers)
-                    ],
-                    start=1,
-                )
+                explore(slot, territory_ref_id, lens)
+                for slot, territory_ref_id, lens in assignments
             )
         )
         territory_refs: list[str] = []
         atom_refs: list[str] = []
-        for slot, output, task_id in sorted(completed):
-            territory_ref_id = territory_id(slot)
+        for slot, territory_ref_id, output, task_id in sorted(completed):
             output = self._validate_completed_output(
                 task_id=task_id,
                 stage=C2_TERRITORY_EXPLORE,
                 output=output,
-                context={"expected_territory_ref": territory_ref_id},
+                context={},
             )
             territory_markdown = _required_text(output, "territory_markdown")
             territory_ref = self.hub.publish_artifact(
@@ -1605,7 +1613,7 @@ class CreativeIdeaWorkflow:
     ) -> tuple[CreativeConcept, ...]:
         if not atom_refs:
             return ()
-        atom_index = _artifact_index(self.hub, atom_refs)
+        atom_index = _atom_index(self.hub, atom_refs)
 
         async def synthesize(slot: int, lens: str) -> tuple[int, dict[str, Any], str]:
             task_id = f"creative-c3-synthesis-{slot:02d}"
@@ -2172,7 +2180,7 @@ class CreativeIdeaWorkflow:
                 blocks=(
                     ("CHALLENGE_BRIEF", self.hub.read_artifact(challenge_ref)),
                     ("CREATIVE_BRIEF", self.hub.read_artifact(brief_ref)),
-                    ("CURRENT_ATOM_INDEX", _artifact_index(self.hub, atom_refs)),
+                    ("CURRENT_ATOM_INDEX", _atom_index(self.hub, atom_refs)),
                     (
                         "BASE_CONCEPT_DISPOSITION_INDEX",
                         _concept_disposition_index(
@@ -2754,10 +2762,24 @@ def _metadata_value(record: Mapping[str, Any], key: str) -> Any:
     return metadata.get(key) if isinstance(metadata, dict) else None
 
 
-def _artifact_index(hub: RunHub, artifact_refs: Sequence[str]) -> str:
-    return "\n\n".join(
-        f"## {ref}\n\n{hub.read_artifact(ref)}" for ref in artifact_refs
-    )
+def _atom_index(hub: RunHub, atom_refs: Sequence[str]) -> str:
+    blocks: list[str] = []
+    for atom_ref in atom_refs:
+        record = _artifact_record(hub, atom_ref)
+        if record.get("artifact_type") != "creative_atom":
+            raise CreativeWorkflowError(
+                f"Atom index source is not a Creative Atom: {atom_ref}"
+            )
+        territory_ref = _required_text(
+            _artifact_metadata(hub, atom_ref),
+            "territory_ref",
+        )
+        blocks.append(
+            f"## {atom_ref}\n\n"
+            f"Territory ref: {territory_ref}\n\n"
+            f"{hub.read_artifact(atom_ref)}"
+        )
+    return "\n\n".join(blocks)
 
 
 def _artifact_json_index(hub: RunHub, artifact_refs: Sequence[str]) -> str:

@@ -154,7 +154,6 @@ class CreativeValidationContext(TypedDict):
     atom_territories: NotRequired[Mapping[str, str]]
     memory_cues: NotRequired[Sequence[Any]]
     memory_snapshot: NotRequired[Any]
-    expected_territory_ref: NotRequired[str]
     expected_primary_territory_ref: NotRequired[str]
     allowed_primary_territory_refs: NotRequired[Collection[str]]
     source_markdown: NotRequired[str]
@@ -319,6 +318,7 @@ def _validate_c2(
     settings: CreativeWorkflowSettings,
     context: CreativeValidationContext,
 ) -> None:
+    del context
     validate_markdown(output["territory_markdown"], label="Creative Territory")
     atoms = output["atoms"]
     if len(atoms) > settings.max_atoms_per_territory:
@@ -326,7 +326,6 @@ def _validate_c2(
             "Territory exceeds configured max_atoms_per_territory"
         )
     seen: set[str] = set()
-    expected_territory = context.get("expected_territory_ref")
     for index, atom in enumerate(atoms):
         markdown = atom["markdown"]
         validate_markdown(
@@ -338,12 +337,6 @@ def _validate_c2(
         if normalized in seen:
             raise CreativeArtifactError("Territory contains duplicate Atom Markdown")
         seen.add(normalized)
-        if expected_territory is not None and expected_territory not in section_body(
-            markdown, "Territory"
-        ):
-            raise CreativeArtifactError(
-                "Atom Territory section must bind the assigned Territory ref"
-            )
 
 
 def _validate_c3(

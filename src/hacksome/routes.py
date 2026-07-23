@@ -419,8 +419,12 @@ class CreativeRunContract:
         )
         from hacksome.creative.contracts import (
             C6C_FEEDBACK_REVISE,
+            CreativeContractError,
             CreativeWorkflowSettings,
+            atom_id,
             final_idea_id,
+            territory_for_atom,
+            territory_id,
         )
         from hacksome.creative.memory import (
             MemoryCapsuleRef,
@@ -608,6 +612,123 @@ class CreativeRunContract:
             if isinstance(record, dict)
             and record.get("artifact_type") == "creative_atom"
         }
+        territory_records = {
+            str(artifact_id): record
+            for artifact_id, record in artifacts.items()
+            if isinstance(record, dict)
+            and record.get("artifact_type") == "creative_territory"
+        }
+        territory_slots: dict[str, int] = {}
+        for territory_ref, record in territory_records.items():
+            territory_metadata = record.get("metadata")
+            if not isinstance(territory_metadata, dict):
+                errors.append(
+                    f"Creative Territory {territory_ref} has no metadata"
+                )
+                continue
+            slot = territory_metadata.get("slot")
+            if isinstance(slot, bool) or not isinstance(slot, int):
+                errors.append(
+                    f"Creative Territory {territory_ref} has invalid slot metadata"
+                )
+                continue
+            try:
+                expected_ref = territory_id(slot)
+            except CreativeContractError:
+                errors.append(
+                    f"Creative Territory {territory_ref} has invalid slot metadata"
+                )
+                continue
+            territory_slots[territory_ref] = slot
+            if expected_ref != territory_ref:
+                errors.append(
+                    f"Creative Territory {territory_ref} slot metadata "
+                    "does not match its ID"
+                )
+
+        for atom_ref, record in atom_records.items():
+            try:
+                encoded_territory_ref = territory_for_atom(atom_ref)
+            except CreativeContractError:
+                encoded_territory_ref = None
+                errors.append(f"Creative Atom {atom_ref} has an invalid stable ID")
+
+            raw_metadata = record.get("metadata")
+            if not isinstance(raw_metadata, dict):
+                errors.append(f"Creative Atom {atom_ref} has no metadata")
+                atom_metadata: Mapping[str, Any] = {}
+            else:
+                atom_metadata = raw_metadata
+
+            metadata_territory_ref = atom_metadata.get("territory_ref")
+            if not isinstance(metadata_territory_ref, str):
+                errors.append(
+                    f"Creative Atom {atom_ref} has invalid territory_ref metadata"
+                )
+            elif (
+                encoded_territory_ref is not None
+                and metadata_territory_ref != encoded_territory_ref
+            ):
+                errors.append(
+                    f"Creative Atom {atom_ref} territory_ref metadata "
+                    "does not match its ID"
+                )
+
+            source_refs = record.get("source_refs")
+            if (
+                not isinstance(source_refs, list)
+                or len(source_refs) != 1
+                or source_refs[0] != metadata_territory_ref
+            ):
+                errors.append(
+                    f"Creative Atom {atom_ref} source_refs must bind exactly "
+                    "its metadata Territory"
+                )
+
+            if (
+                isinstance(metadata_territory_ref, str)
+                and metadata_territory_ref not in territory_records
+            ):
+                errors.append(
+                    f"Creative Atom {atom_ref} references no Creative "
+                    f"Territory artifact: {metadata_territory_ref}"
+                )
+
+            territory_slot = atom_metadata.get("territory_slot")
+            atom_slot = atom_metadata.get("atom_slot")
+            if (
+                isinstance(territory_slot, bool)
+                or not isinstance(territory_slot, int)
+                or isinstance(atom_slot, bool)
+                or not isinstance(atom_slot, int)
+            ):
+                errors.append(
+                    f"Creative Atom {atom_ref} has invalid slot metadata"
+                )
+                continue
+            try:
+                expected_atom_ref = atom_id(territory_slot, atom_slot)
+            except CreativeContractError:
+                errors.append(
+                    f"Creative Atom {atom_ref} has invalid slot metadata"
+                )
+                continue
+            if expected_atom_ref != atom_ref:
+                errors.append(
+                    f"Creative Atom {atom_ref} slot metadata does not match its ID"
+                )
+            if isinstance(metadata_territory_ref, str):
+                territory_slot_from_artifact = territory_slots.get(
+                    metadata_territory_ref
+                )
+                if (
+                    territory_slot_from_artifact is not None
+                    and territory_slot != territory_slot_from_artifact
+                ):
+                    errors.append(
+                        f"Creative Atom {atom_ref} territory_slot does not "
+                        "match its Territory artifact"
+                    )
         base_count = 0
         memory_count = 0
         revisions: dict[str, set[int]] = {}

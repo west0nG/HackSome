@@ -30,12 +30,15 @@
   route-aware `PromptCatalog` 增加显式历史版本 allowlist，旧冻结 Prompt 不会被
   新版本字节或标签替换。
 - 最终离线门禁：ruff、mypy、compileall、Node UI syntax、CLI help smoke、
-  wheel build/resource inspection 全部通过；主项目 `252` tests passed、
+  wheel build/resource inspection 全部通过；主项目 `253` tests passed、
   `8` tests skipped、`0` failed。8 个 skip 仅为当前沙箱明确拒绝 loopback
   socket 的真实 HTTP/lifecycle 测试，普通开发机/CI 仍会执行它们。
-- 待完成：再次 fetch `origin/main`、push、Draft PR。真实浏览器/LAN QA 与
-  在线双臂 benchmark 仍未执行，不能用 mock、离线 evaluator 或 plan-only CLI
-  结果替代。
+- Draft PR 已创建。首次真实 Creative smoke run 在 C2 暴露了隐藏后置条件：
+  validator 要求 Atom 正文包含模型从未收到的 Controller Territory ID。当前
+  修复把谱系收回结构化 metadata/source refs，并让 C3 读取显式
+  Atom→Territory index；自然语言 fixture、tamper 回归与全量门禁均已通过。
+- 待完成：修复后的真实 Creative smoke run、浏览器/LAN QA 与在线双臂
+  benchmark；不能用 mock、离线 evaluator 或 plan-only CLI 结果替代。
 - 工作区存在与本任务无关的 Trellis 升级/onboarding 改动；提交必须使用精确
   文件列表，不能把这些文件一起 stage。
 
@@ -167,7 +170,12 @@
 - [ ] C0 分别发布 Challenge Brief 和 Constraint View。
 - [ ] C1 规范化 Brief，不暂停。
 - [ ] C2 用六个独立 Session 探索固定 lens；每个最多三个 Atom。
+- [ ] C2 Atom 的 `Territory` 保持自然语言；内部 Territory/Atom ID 只由
+  Controller 分配，并用 source refs + metadata 绑定，不要求模型回显 ID。
 - [ ] C3 用四个独立 Session 综合；每个最多三个 Concept。
+- [ ] C3 的 Atom index 由 Controller 显式写出每个 Atom→Territory ref；
+  route validator 校验 Atom ID、metadata slot/ref、source refs 与实际
+  Territory artifact 一致，测试 fixture 不得从 task ID 偷塞隐藏前提。
 - [ ] Base Concept envelope 必须提供 `primary_territory_ref`，且属于 Parent Atoms 的 Territory；发布后任何 curator 不得改写。
 - [ ] 断言 C2/C3 和初始 C4 的 parent refs、registered context、stage input 与 Prompt 均不含 Idea Memory Snapshot、历史 disposition 或外部先例，并在 task policy 中禁止主动扫描 run 历史。
 - [ ] Controller 在 fanout 前分配稳定 ID，并按 ID 聚合。
