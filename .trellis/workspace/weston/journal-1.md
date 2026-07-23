@@ -204,3 +204,36 @@ Adapted the local BuildFactory copy into an autonomous Lead-Worker-Verifier hack
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: Calibrate Problem Gateway evidence bar
+
+**Date**: 2026-07-23
+**Task**: Calibrate Problem Gateway evidence bar
+**Branch**: `main`
+
+### Summary
+
+Adjusted Problem Gateway v3 to preserve strict rejection of invented users, workflows, root causes, and duty-only problems while allowing observed failures or repeated, costly, fragile workarounds without audit-grade proof; updated tests and workflow contract.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5a91757` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
