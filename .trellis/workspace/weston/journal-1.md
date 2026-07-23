@@ -303,3 +303,36 @@ Reran the full AI Trader challenge with gpt-5.6-terra/high and Gateway v3. The v
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: Generator product taste v5
+
+**Date**: 2026-07-23
+**Task**: Generator product taste v5
+**Branch**: `main`
+
+### Summary
+
+Updated Idea Generator v5 to require a specific, interesting product and reject information-artifact core products; updated Idea Red Team v4 to reject reports, cards, checklists, dashboards, ledgers, consoles, summaries, audit packages, and task lists as the primary value. Preserved unrestricted AI use and no forced diversity.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c1d9c74` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
