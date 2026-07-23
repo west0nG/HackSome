@@ -186,6 +186,9 @@
 - [ ] 每个 Concept 启动两个 fresh reviewer。
 - [ ] 实现六个稳定维度原因码和完整 review aggregation matrix。
 - [ ] `repairable` 最多生成一个新 revision。
+- [ ] C4R 与 C6A Prompt 明示并机械验证三个不可变 section：
+  `Intended Reaction`、`Real Input, Transformation and Output`、
+  `Parent Atoms`；不得只在 validator 中保留隐藏后置条件。
 - [ ] C4 repair 保留 source 的 `primary_territory_ref`。
 - [ ] repaired revision 再接受两个 fresh reviewer。
 - [ ] 双 invalid 以 `c4_double_invalid`、修复后非双 pass 以 `c4_unresolved_after_repair` 淘汰，并保留维度原因码。

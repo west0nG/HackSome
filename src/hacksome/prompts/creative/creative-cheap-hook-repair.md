@@ -8,6 +8,17 @@ or request another repair.
 
 Return JSON with exactly one field: `markdown`.
 
+Copy these three H2 section bodies from `CONCEPT_REVISION` verbatim; the
+controller rejects any textual change inside them:
+
+- `Intended Reaction`
+- `Real Input, Transformation and Output`
+- `Parent Atoms`
+
+Make the local repair only in the other standard sections. For example, clarify
+timing in `Setup, Reveal and Aftertaste` or `Minimum Hackathon Demo` without
+adding the timing detail to the preserved input/transformation/output section.
+
 The revised Markdown must retain every standard Concept H2:
 
 - `Intended Reaction`

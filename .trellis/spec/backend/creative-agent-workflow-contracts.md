@@ -148,6 +148,11 @@ catalog 与 Memory Snapshot，不能采用当前 package 默认值替换旧 run 
   Recall，仍须经过普通 C4/C5W。
 - 每个 Concept 的 budget 独立：C4 hook repair ≤1、C6A evidence revision
   恰好 1、C6C feedback revision ≤1。
+- C4 repair 与 C6A evidence revision 都必须逐字保留 source 的
+  `Intended Reaction`、`Real Input, Transformation and Output`、
+  `Parent Atoms` section body；Prompt 必须公开这条机械校验规则。局部时序、
+  表达、风险或 demo 澄清只能写入其他允许变化的 section，不能靠改写核心
+  输入/转换/输出来伪装成同一 Concept。
 - C6B 使用 categorical include/hold/exclude 与 controller round-robin；
   不允许模型 1–10 打分、Top-K 排名或 curator 改写 primary territory。
 - C2 fanout 的 slot 在调用 Agent 前已确定，但内部 Territory ID 不注入 C2
@@ -297,6 +302,7 @@ Idea Card、handoff、Memory Record、completion event 或 result IDs。manifest
 | Useful 传 Creative option，或反向 | 创建 run 前报错 |
 | frozen config/resource/snapshot hash 漂移 | fatal + partial；不调用下一 Agent |
 | Atom ID、metadata、source refs 或 Territory artifact 不一致 | 离线 validation 失败；不得依赖 Markdown 子串修复或放行 |
+| C4R/C6A 改写三个不可变 source section 任一项 | semantic validation 失败并产出 partial；Prompt 必须事先列出不可变 section |
 | C5M optional task 失败 | 写匹配 diagnostic；保留成功 sibling；继续 base |
 | C5W/其他 fatal task 失败 | run failed + partial，不能伪装“无先例/空候选” |
 | base 与 challenger 均无 Hook pass | 空 batch + `all_candidates_failed_hook`，直接 C7 |

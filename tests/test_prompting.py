@@ -40,6 +40,27 @@ class PromptingTests(unittest.TestCase):
         ):
             self.assertEqual(template.count(f"## {heading}\n"), 1)
 
+    def test_bounded_revision_prompts_disclose_immutable_sections(self) -> None:
+        for stage in (
+            "creative-cheap-hook-repair",
+            "creative-evidence-revise",
+        ):
+            with self.subTest(stage=stage):
+                template = creative_prompt_catalog[
+                    stage
+                ].template_path.read_text(encoding="utf-8")
+                normalized = " ".join(template.split())
+                self.assertIn(
+                    "the controller rejects any textual change inside them",
+                    normalized,
+                )
+                self.assertIn("`Intended Reaction`", template)
+                self.assertIn(
+                    "`Real Input, Transformation and Output`",
+                    template,
+                )
+                self.assertIn("`Parent Atoms`", template)
+
     def test_useful_catalog_preserves_order_versions_schemas_and_web_policy(
         self,
     ) -> None:
