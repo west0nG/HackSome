@@ -4,6 +4,8 @@ import tempfile
 import unittest
 
 from hacksome.config import CodexConfig
+from hacksome.creative.contracts import CreativeWorkflowSettings
+from hacksome.creative.workflow import CreativeIdeaWorkflow
 from hacksome.hub import RunHub
 from hacksome.prompting import useful_prompt_catalog
 from hacksome.routes import get_run_contract, inspect_run, validate_run
@@ -53,20 +55,17 @@ class RouteContractTests(unittest.TestCase):
             )
             self.assertEqual(validate_run(hub.run_dir), [])
 
-    def test_creative_route_uses_registered_slice_one_projection(self) -> None:
+    def test_creative_route_uses_registered_contract(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            hub = RunHub.create(
+            workflow = CreativeIdeaWorkflow.create(
                 "challenge",
                 directory,
-                settings={},
-                codex_config=CodexConfig(),
                 run_id="creative-run",
-                route="creative",
+                settings=CreativeWorkflowSettings(idea_memory_mode="off"),
             )
-            self.freeze_placeholder_manifest(hub)
-            projection = inspect_run(hub.run_dir)
+            projection = inspect_run(workflow.run_dir)
             self.assertEqual(projection["route_id"], "creative")
-            self.assertEqual(validate_run(hub.run_dir), [])
+            self.assertEqual(validate_run(workflow.run_dir), [])
 
     def test_unknown_route_and_contract_version_are_explicit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

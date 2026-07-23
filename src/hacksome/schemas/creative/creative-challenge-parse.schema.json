@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["challenge_brief_markdown", "constraint_view_markdown"],
+  "properties": {
+    "challenge_brief_markdown": {"type": "string", "minLength": 1},
+    "constraint_view_markdown": {"type": "string", "minLength": 1}
+  }
+}

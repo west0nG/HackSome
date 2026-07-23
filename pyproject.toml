@@ -21,4 +21,9 @@ include-package-data = true
 where = ["src"]
 
 [tool.setuptools.package-data]
-hacksome = ["prompts/*.md", "schemas/*.json"]
+hacksome = [
+  "prompts/*.md",
+  "prompts/creative/*.md",
+  "schemas/*.json",
+  "schemas/creative/*.json",
+]
