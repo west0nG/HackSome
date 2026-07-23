@@ -97,7 +97,7 @@ def _write_source_run(
     artifacts: dict[str, Any] = {
         report_id: {
             "artifact_id": report_id,
-            "artifact_type": "creative_report_json",
+            "artifact_type": "creative_idea_report_json",
             "path": "artifacts/creative/report/creative-idea-report.json",
             "sha256": sha256_text(report_text),
         }

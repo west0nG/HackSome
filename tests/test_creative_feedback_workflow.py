@@ -11,7 +11,6 @@ from hacksome.creative.artifacts import FEEDBACK_REVISION_HEADINGS
 from hacksome.creative.contracts import C6C_FEEDBACK_REVISE
 from hacksome.creative.finalize import (
     CreativeFeedbackError,
-    INTERNAL_C6_FEEDBACK_COMPLETE_STAGE,
 )
 from hacksome.creative.review import ReviewBatch, ReviewRound, ReviewStore
 from hacksome.creative.workflow import CreativeIdeaWorkflow
@@ -208,17 +207,29 @@ class CreativeFeedbackWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
             outcome = await workflow.resume()
 
+            self.assertEqual(outcome.status, "completed")
             self.assertEqual(
                 workflow.hub.load_state()["current_stage"],
-                INTERNAL_C6_FEEDBACK_COMPLETE_STAGE,
+                "creative-finalization",
             )
-            self.assertEqual(outcome.zero_reason_code, None)
+            report = json.loads(
+                workflow.hub.read_artifact(
+                    "creative-idea-report-json"
+                )
+            )
+            self.assertIsNone(report["zero_reason_code"])
             self.assertEqual(
-                outcome.final_idea_refs,
-                ("creative-idea-001", "creative-idea-002"),
+                report["final_idea_card_ids"],
+                [
+                    "creative-idea-001-card",
+                    "creative-idea-002-card",
+                ],
             )
             finals = _artifacts_of_type(workflow, "creative_final_idea")
-            self.assertEqual(set(finals), set(outcome.final_idea_refs))
+            self.assertEqual(
+                set(finals),
+                {"creative-idea-001", "creative-idea-002"},
+            )
             self.assertEqual(
                 workflow.hub.read_artifact("creative-idea-001"),
                 workflow.hub.read_artifact(first_ref),
@@ -329,7 +340,15 @@ class CreativeFeedbackWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
             outcome = await workflow.resume()
 
-            self.assertEqual(outcome.final_idea_refs, ("creative-idea-001",))
+            self.assertEqual(outcome.status, "completed")
+            self.assertEqual(
+                json.loads(
+                    workflow.hub.read_artifact(
+                        "creative-idea-report-json"
+                    )
+                )["final_idea_card_ids"],
+                ["creative-idea-001-card"],
+            )
             c6c_tasks = [
                 task
                 for task in runner.tasks
@@ -392,9 +411,15 @@ class CreativeFeedbackWorkflowTests(unittest.IsolatedAsyncioTestCase):
             outcome = await workflow.resume()
 
             self.assertEqual(len(runner.tasks), before_task_count)
-            self.assertEqual(outcome.final_idea_refs, ())
+            self.assertEqual(outcome.status, "completed")
+            report = json.loads(
+                workflow.hub.read_artifact(
+                    "creative-idea-report-json"
+                )
+            )
+            self.assertEqual(report["final_idea_card_ids"], [])
             self.assertEqual(
-                outcome.zero_reason_code,
+                report["zero_reason_code"],
                 "all_human_rejected",
             )
             self.assertFalse(

@@ -13,11 +13,22 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Literal, Mapping, Protocol, Sequence, cast
+from typing import (
+    Any,
+    Callable,
+    Literal,
+    Mapping,
+    NoReturn,
+    Protocol,
+    Sequence,
+    cast,
+)
 
 from hacksome.codex import CodexRunner
 from hacksome.config import (
     CodexConfig,
+    PersistedConfigError,
+    decode_persisted_dataclass,
     serialize_persisted_dataclass,
 )
 from hacksome.creative.contracts import (
@@ -32,6 +43,7 @@ from hacksome.creative.contracts import (
     C5W_NOVELTY_SCAN,
     C6A_EVIDENCE_REVISE,
     C6B_PORTFOLIO_CURATE,
+    C6C_FEEDBACK_REVISE,
     CreativeWorkflowSettings,
     DEFAULT_CREATIVE_BRIEF,
     DEFAULT_TERRITORY_LENSES,
@@ -64,6 +76,7 @@ from hacksome.hub import RunHub
 from hacksome.models import CodexTask
 from hacksome.prompting import PromptCatalog
 from hacksome.state import (
+    StateError,
     atomic_write_text,
     sha256_text,
 )
@@ -169,7 +182,7 @@ class CreativeRunOutcome:
     result.
     """
 
-    status: Literal["waiting", "completed"]
+    status: Literal["waiting", "finalizing", "completed"]
     run_dir: Path
     primary_artifact: Path
     next_command: str | None
@@ -323,6 +336,102 @@ class CreativeIdeaWorkflow:
             run_timeout_seconds=run_timeout_seconds,
         )
 
+    @classmethod
+    def open(
+        cls,
+        run_dir: str | Path,
+        *,
+        runner: Runner | None = None,
+        run_timeout_seconds: float = DEFAULT_RUN_TIMEOUT_SECONDS,
+    ) -> CreativeIdeaWorkflow:
+        """Reconstruct one existing Creative run from hash-bound resources.
+
+        This is intentionally route-owned.  The CLI must not re-create settings
+        or prompt resources from ambient package defaults when resuming a run.
+        """
+
+        hub = RunHub(run_dir)
+        state = hub.load_state()
+        route = state.get("route")
+        if not isinstance(route, dict) or route.get("id") != "creative":
+            raise CreativeWorkflowError(
+                "only a persisted Creative run can be opened by this workflow"
+            )
+        hashes = state.get("config_hashes")
+        raw_settings = state.get("settings")
+        manifest = state.get("resource_manifest")
+        inputs = state.get("inputs")
+        if (
+            not isinstance(hashes, dict)
+            or not isinstance(raw_settings, dict)
+            or not isinstance(manifest, dict)
+            or not isinstance(inputs, dict)
+        ):
+            raise CreativeWorkflowError(
+                "Creative run is missing frozen configuration or resources"
+            )
+        expected_settings_hash = hashes.get("workflow_settings_sha256")
+        if not isinstance(expected_settings_hash, str):
+            raise CreativeWorkflowError(
+                "Creative run has no workflow settings hash"
+            )
+        try:
+            settings = decode_persisted_dataclass(
+                CreativeWorkflowSettings,
+                raw_settings,
+                expected_sha256=expected_settings_hash,
+            )
+            config = hub.load_codex_config()
+            catalog = creative_prompt_catalog.load_frozen(
+                hub.run_dir,
+                route_id="creative",
+                contract_version=str(route.get("contract_version", "")),
+                prompt_policy_version=str(
+                    route.get("prompt_policy_version", "")
+                ),
+                stage_policy_version=str(
+                    route.get("stage_policy_version", "")
+                ),
+                manifest_sha256=str(manifest.get("sha256", "")),
+            )
+            memory_record = inputs.get("idea_memory")
+            if not isinstance(memory_record, dict):
+                raise CreativeWorkflowError(
+                    "Creative run has no frozen Idea Memory input"
+                )
+            memory_path = memory_record.get("path")
+            memory_sha256 = memory_record.get("sha256")
+            if not isinstance(memory_path, str) or not isinstance(
+                memory_sha256, str
+            ):
+                raise CreativeWorkflowError(
+                    "Creative Idea Memory input has no path/hash"
+                )
+            memory_snapshot = load_memory_snapshot(
+                hub.run_dir.joinpath(*Path(memory_path).parts),
+                expected_sha256=memory_sha256,
+            )
+        except CreativeWorkflowError:
+            raise
+        except (OSError, PersistedConfigError, ValueError) as exc:
+            raise CreativeWorkflowError(
+                f"Creative frozen run could not be opened: {exc}"
+            ) from exc
+
+        def validator(stage: str, output: dict[str, Any]) -> None:
+            validate_creative_output(stage, output, settings=settings)
+
+        return cls(
+            hub,
+            runner or CodexRunner(config),
+            settings=settings,
+            prompt_catalog=catalog,
+            memory_snapshot=memory_snapshot,
+            semantic_validator=validator,
+            task_timeout_seconds=config.default_timeout_seconds,
+            run_timeout_seconds=run_timeout_seconds,
+        )
+
     async def execute_c0_c5(self) -> CreativeC0C5Outcome:
         """Run through novelty evidence and stop at the internal C6 boundary."""
 
@@ -392,6 +501,7 @@ class CreativeIdeaWorkflow:
                 )
         except TimeoutError as exc:
             self.hub.set_run_status("failed", stage=stage, error=exc)
+            self._publish_partial_after_failure(stage=stage)
             raise CreativeWorkflowError("Creative workflow exceeded run timeout") from exc
         except Exception as exc:
             task_id = exc.task_id if isinstance(exc, AgentTaskExecutionError) else None
@@ -399,6 +509,10 @@ class CreativeIdeaWorkflow:
                 "failed",
                 stage=stage,
                 error=exc,
+                task_id=task_id,
+            )
+            self._publish_partial_after_failure(
+                stage=stage,
                 task_id=task_id,
             )
             if isinstance(exc, CreativeWorkflowError):
@@ -468,12 +582,7 @@ class CreativeIdeaWorkflow:
                             "ready for deterministic C7"
                         ),
                     )
-                    return CreativeRunOutcome(
-                        status="completed",
-                        run_dir=self.run_dir,
-                        primary_artifact=self._artifact_path(batch_ref),
-                        next_command=None,
-                    )
+                    return self._finalize_success()
 
                 self.hub.set_run_status("running", stage=stage)
                 evidence_revisions = await self._run_c6a(
@@ -502,12 +611,7 @@ class CreativeIdeaWorkflow:
                             "C6 shortlist is empty; ready for deterministic C7"
                         ),
                     )
-                    return CreativeRunOutcome(
-                        status="completed",
-                        run_dir=self.run_dir,
-                        primary_artifact=self._artifact_path(batch_ref),
-                        next_command=None,
-                    )
+                    return self._finalize_success()
 
                 batch_ref, batch = self._publish_review_batch(
                     concept_refs=tuple(
@@ -550,6 +654,7 @@ class CreativeIdeaWorkflow:
                 )
         except TimeoutError as exc:
             self.hub.set_run_status("failed", stage=stage, error=exc)
+            self._publish_partial_after_failure(stage=stage)
             raise CreativeWorkflowError(
                 "Creative C6 workflow exceeded run timeout"
             ) from exc
@@ -565,20 +670,201 @@ class CreativeIdeaWorkflow:
                 error=exc,
                 task_id=task_id,
             )
+            self._publish_partial_after_failure(
+                stage=stage,
+                task_id=task_id,
+            )
             if isinstance(exc, CreativeWorkflowError):
                 raise
             raise CreativeWorkflowError(str(exc)) from exc
 
     async def resume(self) -> Any:
-        """Consume one closed C6 resolution and hand its Final Ideas to C7.
+        """Resume the one legal Creative boundary and finish C7.
 
-        The import is local so the feedback finalizer can use the workflow's
-        already-frozen executor without creating an import cycle.
+        A closed C6 wait may run bounded C6C Agent work once.  A frozen C7 plan
+        is replayed without rendering or invoking an Agent.  No other failed or
+        mid-stage state is a general-purpose run recovery point.
         """
 
         from hacksome.creative.finalize import CreativeFeedbackFinalizer
 
-        return await CreativeFeedbackFinalizer(self).resume()
+        state = self.hub.load_state()
+        if state.get("status") == "completed":
+            return self._completed_outcome()
+        if (
+            state.get("status") == "running"
+            and state.get("current_stage") == "creative-finalization"
+        ):
+            return self._replay_finalization()
+        wait = state.get("wait")
+        if not (
+            state.get("status") == "waiting"
+            and state.get("current_stage") == CREATIVE_HUMAN_REVIEW_STAGE
+            and isinstance(wait, dict)
+            and wait.get("kind") == "creative_human_review"
+        ):
+            raise CreativeWorkflowError(
+                "Creative resume requires a closed C6 review wait or a "
+                "frozen C7 publication"
+            )
+        try:
+            await CreativeFeedbackFinalizer(self).resume()
+            return self._finalize_success()
+        except Exception:
+            state = self.hub.load_state()
+            if state.get("status") == "failed":
+                self._publish_partial_after_failure(
+                    stage=str(
+                        state.get("current_stage")
+                        or C6C_FEEDBACK_REVISE
+                    )
+                )
+            raise
+
+    def _finalize_success(self) -> CreativeRunOutcome:
+        """Render once from the frozen source snapshot and publish atomically."""
+
+        from hacksome.creative.finalization import (
+            FINALIZATION_MANIFEST_PATH,
+            FINALIZATION_STAGE,
+            FinalizationCoordinator,
+            FinalizationError,
+        )
+        from hacksome.creative.report import (
+            REPORT_MARKDOWN_ARTIFACT_ID,
+            render_success_report,
+        )
+        from hacksome.creative.report_projection import (
+            build_report_projection,
+        )
+
+        def render(
+            _source: Any,
+            snapshot: Mapping[str, Any],
+        ) -> Sequence[Any]:
+            projection = build_report_projection(
+                self.hub,
+                snapshot=snapshot,
+            )
+            return render_success_report(projection).outputs
+
+        coordinator = FinalizationCoordinator(self.hub)
+        try:
+            coordinator.finalize(render)
+        except (FinalizationError, StateError) as exc:
+            self._fail_finalization(exc, stage=FINALIZATION_STAGE)
+        except Exception as exc:
+            manifest_path = self.run_dir / FINALIZATION_MANIFEST_PATH
+            if manifest_path.is_file():
+                return CreativeRunOutcome(
+                    status="finalizing",
+                    run_dir=self.run_dir,
+                    primary_artifact=manifest_path,
+                    next_command=f"hacksome resume {self.run_dir}",
+                )
+            self._fail_finalization(exc, stage=FINALIZATION_STAGE)
+        return CreativeRunOutcome(
+            status="completed",
+            run_dir=self.run_dir,
+            primary_artifact=self._artifact_path(
+                REPORT_MARKDOWN_ARTIFACT_ID
+            ),
+            next_command=None,
+        )
+
+    def _replay_finalization(self) -> CreativeRunOutcome:
+        """Replay an immutable publication plan without invoking its renderer."""
+
+        from hacksome.creative.finalization import (
+            FINALIZATION_MANIFEST_PATH,
+            FINALIZATION_STAGE,
+            FinalizationCoordinator,
+            FinalizationError,
+        )
+        from hacksome.creative.report import REPORT_MARKDOWN_ARTIFACT_ID
+
+        coordinator = FinalizationCoordinator(self.hub)
+        try:
+            coordinator.replay()
+        except (FinalizationError, StateError) as exc:
+            self._fail_finalization(exc, stage=FINALIZATION_STAGE)
+        except Exception:
+            return CreativeRunOutcome(
+                status="finalizing",
+                run_dir=self.run_dir,
+                primary_artifact=(
+                    self.run_dir / FINALIZATION_MANIFEST_PATH
+                ),
+                next_command=f"hacksome resume {self.run_dir}",
+            )
+        return CreativeRunOutcome(
+            status="completed",
+            run_dir=self.run_dir,
+            primary_artifact=self._artifact_path(
+                REPORT_MARKDOWN_ARTIFACT_ID
+            ),
+            next_command=None,
+        )
+
+    def _completed_outcome(self) -> CreativeRunOutcome:
+        """Return a completed result without mutating or re-rendering the run."""
+
+        from hacksome.creative.report import REPORT_MARKDOWN_ARTIFACT_ID
+        from hacksome.routes import validate_run
+
+        errors = validate_run(self.run_dir)
+        if errors:
+            raise CreativeWorkflowError(
+                "completed Creative run failed validation: "
+                + "; ".join(errors)
+            )
+        return CreativeRunOutcome(
+            status="completed",
+            run_dir=self.run_dir,
+            primary_artifact=self._artifact_path(
+                REPORT_MARKDOWN_ARTIFACT_ID
+            ),
+            next_command=None,
+        )
+
+    def _fail_finalization(
+        self,
+        error: BaseException,
+        *,
+        stage: str,
+    ) -> NoReturn:
+        """Persist the first C7 failure and publish only a partial report."""
+
+        state = self.hub.load_state()
+        if state.get("status") != "failed":
+            self.hub.set_run_status(
+                "failed",
+                stage=stage,
+                error=error,
+            )
+        self._publish_partial_after_failure(stage=stage)
+        raise CreativeWorkflowError(
+            f"Creative deterministic finalization failed: {error}"
+        ) from error
+
+    def _publish_partial_after_failure(
+        self,
+        *,
+        stage: str,
+        task_id: str | None = None,
+    ) -> None:
+        """Best-effort partial report without replacing the terminal cause."""
+
+        from hacksome.creative.partial_report import publish_partial_report
+
+        try:
+            publish_partial_report(self.hub)
+        except Exception as exc:
+            self.hub.add_secondary_error(
+                exc,
+                stage=stage,
+                task_id=task_id,
+            )
 
     async def _run_c6a(
         self,

@@ -27,11 +27,13 @@ from hacksome.state import (
     StateError,
     advisory_lease,
     append_jsonl,
+    atomic_write_bytes,
     atomic_write_json,
     atomic_write_text,
     normalize_json,
     read_json_object,
     read_jsonl,
+    sha256_bytes,
     sha256_file,
     sha256_json,
     sha256_text,
@@ -559,6 +561,94 @@ class RunHub:
 
         self._mutate(update)
 
+    def bind_finalization_manifest(
+        self,
+        reference: Mapping[str, Any],
+    ) -> bool:
+        """Bind one immutable finalization manifest to the run.
+
+        The manifest file is written and hashed by the route coordinator before
+        this call.  Binding it in ``run.json`` makes an otherwise orphaned state
+        file discoverable without allowing a later caller to substitute a
+        different plan.
+        """
+
+        normalized = normalize_json(
+            dict(reference),
+            label="finalization manifest reference",
+        )
+        expected_keys = {
+            "id",
+            "manifest_path",
+            "manifest_sha256",
+            "phase",
+        }
+        if not isinstance(normalized, dict) or set(normalized) != expected_keys:
+            raise StateError(
+                "finalization manifest reference has invalid fields"
+            )
+        finalization_id = normalized.get("id")
+        manifest_path = normalized.get("manifest_path")
+        manifest_sha256 = normalized.get("manifest_sha256")
+        if (
+            not isinstance(finalization_id, str)
+            or not _SAFE_ID.fullmatch(finalization_id)
+        ):
+            raise StateError("finalization manifest id is invalid")
+        if not isinstance(manifest_path, str):
+            raise StateError("finalization manifest path is invalid")
+        if (
+            not isinstance(manifest_sha256, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", manifest_sha256)
+        ):
+            raise StateError("finalization manifest hash is invalid")
+        if normalized.get("phase") != "publishing":
+            raise StateError(
+                "a new finalization manifest must start in publishing"
+            )
+        manifest_file = self._resolve_relative(manifest_path)
+        if not manifest_file.is_file():
+            raise StateError("finalization manifest file is missing")
+        if sha256_file(manifest_file) != manifest_sha256:
+            raise StateConflictError("finalization manifest hash mismatch")
+
+        created = False
+
+        def update(state: dict[str, Any]) -> None:
+            nonlocal created
+            existing = state.get("finalization")
+            if existing is None:
+                state["finalization"] = normalized
+                created = True
+                return
+            if not isinstance(existing, dict):
+                raise StateError("run finalization reference must be an object")
+            comparable = dict(existing)
+            phase = comparable.pop("phase", None)
+            expected = dict(normalized)
+            expected.pop("phase")
+            if comparable != expected or phase not in {
+                "publishing",
+                "completed",
+            }:
+                raise StateConflictError(
+                    "run is already bound to a different finalization manifest"
+                )
+
+        self._mutate(update)
+        return created
+
+    def load_consistent_snapshot(self) -> dict[str, Any]:
+        """Read run state and every allowlisted ledger under one shared lease."""
+
+        with advisory_lease(self.lock_path, exclusive=False, create=False):
+            state = self._project_state(self._read_raw_state())
+            ledgers = {
+                ledger: read_jsonl(self.run_dir / filename)
+                for ledger, (filename, _id_field) in _LEDGERS.items()
+            }
+        return {"state": state, "ledgers": ledgers}
+
     def task_paths(self, task_id: str) -> TaskPaths:
         if not _SAFE_ID.fullmatch(task_id):
             raise ValueError(f"unsafe task id: {task_id!r}")
@@ -876,6 +966,305 @@ class RunHub:
             )
             self._commit_locked(state, [self._pending("events", event)])
         return artifact_id
+
+    def publish_planned_artifact(
+        self,
+        *,
+        artifact_record: Mapping[str, Any],
+        publish_event: Mapping[str, Any],
+        content: bytes,
+    ) -> str:
+        """Publish exact manifest-planned bytes, record, and event.
+
+        Unlike ``publish_artifact()``, this method never chooses a timestamp or
+        regenerates event content.  A replay therefore reproduces the manifest
+        byte-for-byte and fails closed on any conflicting record.
+        """
+
+        if not isinstance(content, bytes):
+            raise TypeError("planned artifact content must be bytes")
+        record = normalize_json(
+            dict(artifact_record),
+            label="planned artifact record",
+        )
+        event = normalize_json(
+            dict(publish_event),
+            label="planned artifact event",
+        )
+        record_keys = {
+            "artifact_id",
+            "artifact_type",
+            "path",
+            "sha256",
+            "task_id",
+            "source_refs",
+            "metadata",
+            "created_at",
+        }
+        event_keys = {"event_id", "kind", "data", "created_at"}
+        if not isinstance(record, dict) or set(record) != record_keys:
+            raise StateError("planned artifact record has invalid fields")
+        if not isinstance(event, dict) or set(event) != event_keys:
+            raise StateError("planned artifact event has invalid fields")
+
+        artifact_id = record.get("artifact_id")
+        artifact_type = record.get("artifact_type")
+        relative_path = record.get("path")
+        digest = record.get("sha256")
+        created_at = record.get("created_at")
+        if (
+            not isinstance(artifact_id, str)
+            or not _SAFE_ID.fullmatch(artifact_id)
+        ):
+            raise StateError("planned artifact id is invalid")
+        if not isinstance(artifact_type, str) or not artifact_type:
+            raise StateError("planned artifact type is invalid")
+        if not isinstance(relative_path, str):
+            raise StateError("planned artifact path is invalid")
+        if digest != sha256_bytes(content):
+            raise StateConflictError("planned artifact content hash mismatch")
+        if not isinstance(created_at, str) or not created_at:
+            raise StateError("planned artifact created_at is invalid")
+        task_id = record.get("task_id")
+        if task_id is not None and (
+            not isinstance(task_id, str) or not _SAFE_ID.fullmatch(task_id)
+        ):
+            raise StateError("planned artifact task_id is invalid")
+        source_refs = record.get("source_refs")
+        metadata = record.get("metadata")
+        if (
+            not isinstance(source_refs, list)
+            or any(
+                not isinstance(reference, str) or not reference
+                for reference in source_refs
+            )
+            or not isinstance(metadata, dict)
+        ):
+            raise StateError(
+                "planned artifact source_refs/metadata are invalid"
+            )
+
+        event_id = event.get("event_id")
+        if (
+            event_id != f"artifact:{artifact_id}:published"
+            or event.get("kind") != "artifact.published"
+            or event.get("created_at") != created_at
+            or event.get("data")
+            != {
+                "artifact_id": artifact_id,
+                "artifact_type": artifact_type,
+            }
+        ):
+            raise StateError(
+                "planned artifact publish event does not match its record"
+            )
+
+        destination = self._resolve_relative(relative_path)
+        if destination.is_symlink():
+            raise StateError(
+                f"refusing symlink artifact path: {relative_path}"
+            )
+        with self._exclusive_lease():
+            state = self._prepare_writer_state()
+            artifacts = _object(state.get("artifacts"), "artifacts")
+            existing_record = artifacts.get(artifact_id)
+            existing_event = self._find_ledger_record(
+                "events",
+                str(event_id),
+                state,
+            )
+            if existing_record is not None:
+                if existing_record != record:
+                    raise StateConflictError(
+                        f"artifact {artifact_id!r} already has different metadata"
+                    )
+                if not destination.is_file():
+                    raise StateError(
+                        f"artifact {artifact_id!r} is registered but its file is missing"
+                    )
+                if sha256_file(destination) != digest:
+                    raise StateConflictError(
+                        f"artifact {artifact_id!r} file hash conflicts with its record"
+                    )
+                if existing_event is not None:
+                    if existing_event != event:
+                        raise StateConflictError(
+                            f"artifact {artifact_id!r} has a conflicting publish event"
+                        )
+                    return artifact_id
+                self._commit_locked(
+                    state,
+                    [self._pending("events", event)],
+                )
+                return artifact_id
+
+            if existing_event is not None:
+                raise StateConflictError(
+                    f"artifact {artifact_id!r} event exists without its record"
+                )
+            for other_id, raw in artifacts.items():
+                if isinstance(raw, dict) and raw.get("path") == relative_path:
+                    raise StateConflictError(
+                        f"artifact path {relative_path!r} is already registered "
+                        f"to {other_id!r}"
+                    )
+            if destination.exists():
+                if not destination.is_file():
+                    raise StateConflictError(
+                        f"artifact path is not a regular file: {relative_path}"
+                    )
+                if sha256_file(destination) != digest:
+                    raise StateConflictError(
+                        "unregistered planned artifact path has different content: "
+                        f"{relative_path}"
+                    )
+            else:
+                atomic_write_bytes(destination, content)
+            artifacts[artifact_id] = record
+            self._commit_locked(
+                state,
+                [self._pending("events", event)],
+            )
+        return artifact_id
+
+    def commit_planned_completion(
+        self,
+        *,
+        result_artifact_ids: Sequence[str],
+        transition_event: Mapping[str, Any],
+        finalization_id: str,
+        manifest_sha256: str,
+    ) -> bool:
+        """Expose final results only after the exact completion event exists.
+
+        The event is appended before the final atomic ``run.json`` replacement.
+        If the process stops between those writes, replay observes the exact
+        event and safely completes the state transition without creating a new
+        timestamp or transition sequence.
+        """
+
+        results = list(result_artifact_ids)
+        if (
+            len(results) != len(set(results))
+            or any(
+                not isinstance(value, str) or not _SAFE_ID.fullmatch(value)
+                for value in results
+            )
+        ):
+            raise ValueError(
+                "result artifact IDs must be unique safe identifiers"
+            )
+        event = normalize_json(
+            dict(transition_event),
+            label="planned completion event",
+        )
+        if not isinstance(event, dict) or set(event) != {
+            "event_id",
+            "kind",
+            "data",
+            "created_at",
+        }:
+            raise StateError("planned completion event has invalid fields")
+        event_id = event.get("event_id")
+        match = (
+            re.fullmatch(r"run:transition:([0-9]{8})", event_id)
+            if isinstance(event_id, str)
+            else None
+        )
+        data = event.get("data")
+        if (
+            match is None
+            or event.get("kind") != "run.status"
+            or not isinstance(event.get("created_at"), str)
+            or not isinstance(data, dict)
+            or data.get("to_status") != "completed"
+            or data.get("status") != "completed"
+        ):
+            raise StateError("planned completion event is invalid")
+        planned_sequence = int(match.group(1))
+        if (
+            not isinstance(finalization_id, str)
+            or not _SAFE_ID.fullmatch(finalization_id)
+            or not re.fullmatch(r"[0-9a-f]{64}", manifest_sha256)
+        ):
+            raise StateError("planned finalization identity is invalid")
+
+        with self._exclusive_lease():
+            state = self._prepare_writer_state()
+            finalization = state.get("finalization")
+            if (
+                not isinstance(finalization, dict)
+                or finalization.get("id") != finalization_id
+                or finalization.get("manifest_sha256") != manifest_sha256
+                or finalization.get("phase")
+                not in {"publishing", "completed"}
+            ):
+                raise StateConflictError(
+                    "planned completion does not match the bound manifest"
+                )
+            artifacts = _object(state.get("artifacts"), "artifacts")
+            missing = [value for value in results if value not in artifacts]
+            if missing:
+                raise StateError(
+                    f"result artifacts are not registered: {missing}"
+                )
+            current_sequence = state.get("transition_seq")
+            if (
+                isinstance(current_sequence, bool)
+                or not isinstance(current_sequence, int)
+                or current_sequence < 0
+            ):
+                raise StateError(
+                    "transition_seq must be a non-negative integer"
+                )
+
+            existing_event = self._find_ledger_record(
+                "events",
+                str(event_id),
+                state,
+            )
+            if existing_event is not None and existing_event != event:
+                raise StateConflictError(
+                    "planned completion event conflicts with its ledger record"
+                )
+            if state.get("status") == "completed":
+                if (
+                    current_sequence != planned_sequence
+                    or state.get("result_artifact_ids") != results
+                    or finalization.get("phase") != "completed"
+                    or existing_event is None
+                ):
+                    raise StateConflictError(
+                        "completed run does not match its finalization manifest"
+                    )
+                return False
+            if (
+                state.get("status") != "running"
+                or current_sequence + 1 != planned_sequence
+                or data.get("from_status") != "running"
+            ):
+                raise StateConflictError(
+                    "run cannot apply the planned completion transition"
+                )
+            if state.get("terminal_error") is not None:
+                raise StateConflictError(
+                    "failed run cannot publish planned final results"
+                )
+
+            if existing_event is None:
+                append_jsonl(
+                    self.events_path,
+                    event,
+                    id_field="event_id",
+                )
+            state["status"] = "completed"
+            state["current_stage"] = data.get("stage")
+            state["transition_seq"] = planned_sequence
+            state["result_artifact_ids"] = results
+            finalization["phase"] = "completed"
+            state["updated_at"] = event["created_at"]
+            atomic_write_json(self.state_path, state)
+        return True
 
     def read_artifact(self, artifact_id: str) -> str:
         state = self.load_state()

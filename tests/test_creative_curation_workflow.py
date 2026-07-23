@@ -248,11 +248,13 @@ class CreativeCurationWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(outcome.status, "completed")
             state = workflow.hub.load_state()
-            self.assertEqual(state["status"], "running")
+            self.assertEqual(state["status"], "completed")
             self.assertIsNone(state["wait"])
             batch = ReviewBatch.from_dict(
                 json.loads(
-                    outcome.primary_artifact.read_text(encoding="utf-8")
+                    workflow.hub.read_artifact(
+                        "creative-review-batch-r001"
+                    )
                 )
             )
             self.assertEqual(batch.status, "skipped_empty")
@@ -280,11 +282,13 @@ class CreativeCurationWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 runner=runner,
             )
 
-            outcome = await workflow.execute()
+            await workflow.execute()
 
             batch = ReviewBatch.from_dict(
                 json.loads(
-                    outcome.primary_artifact.read_text(encoding="utf-8")
+                    workflow.hub.read_artifact(
+                        "creative-review-batch-r001"
+                    )
                 )
             )
             self.assertEqual(
@@ -306,11 +310,13 @@ class CreativeCurationWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 runner=runner,
             )
 
-            outcome = await workflow.execute()
+            await workflow.execute()
 
             batch = ReviewBatch.from_dict(
                 json.loads(
-                    outcome.primary_artifact.read_text(encoding="utf-8")
+                    workflow.hub.read_artifact(
+                        "creative-review-batch-r001"
+                    )
                 )
             )
             self.assertEqual(batch.skip_reason, "shortlist_empty")
