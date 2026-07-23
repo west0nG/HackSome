@@ -7,7 +7,8 @@ feel. Do not assume an uncontrolled third party will act after the product
 merely creates a report, ticket, or recommendation.
 
 Return JSON with exactly one field, `candidates`. Every candidate has exactly
-`title` and `markdown`. An empty array is valid.
+one field, `markdown`. The Hub derives the candidate title from the Markdown
+H1. An empty array is valid.
 
 Each candidate Markdown must have exactly one H1 and exactly one non-empty H2
 for each heading below:

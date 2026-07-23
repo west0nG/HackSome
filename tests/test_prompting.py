@@ -45,6 +45,17 @@ class PromptingTests(unittest.TestCase):
         self.assertNotIn("Why This Technology", rendered.text)
         self.assertNotIn("sponsor technology", rendered.text.lower())
 
+    def test_candidate_prompts_use_markdown_h1_as_the_only_title(self) -> None:
+        for stage in ("problem-write", "idea-generate"):
+            with self.subTest(stage=stage):
+                rendered = render_prompt(stage, (("CONTEXT", "# Context\n\nReal"),))
+                self.assertIn(
+                    "The Hub derives the candidate title from the Markdown\nH1",
+                    rendered.text,
+                )
+                self.assertNotIn("`title`", rendered.text)
+                self.assertEqual(rendered.template_version, "2")
+
 
 if __name__ == "__main__":
     unittest.main()

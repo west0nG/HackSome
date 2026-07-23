@@ -213,7 +213,10 @@ class CodexRunnerTests(unittest.IsolatedAsyncioTestCase):
             if value == "--config"
         ]
         self.assertIn('web_search="live"', config_values)
+        self.assertIn('model_reasoning_effort="high"', config_values)
         self.assertIn("skills.include_instructions=false", config_values)
+        self.assertIn("--model", argv)
+        self.assertIn("gpt-5.6-terra", argv)
         self.assertNotIn("--search", argv)
         self.assertIn("--ask-for-approval", argv)
         self.assertIn("never", argv)

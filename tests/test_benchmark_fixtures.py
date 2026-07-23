@@ -10,6 +10,8 @@ FIXTURE_ROOT = (
     Path(__file__).resolve().parents[1]
     / ".trellis"
     / "tasks"
+    / "archive"
+    / "2026-07"
     / "07-22-hackathon-agent-product"
     / "fixtures"
 )

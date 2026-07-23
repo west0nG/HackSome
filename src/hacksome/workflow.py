@@ -706,11 +706,8 @@ def _candidates(output: dict[str, Any]) -> list[dict[str, Any]]:
 def _candidate_markdown(
     candidate: dict[str, Any], label: str, headings: Sequence[str]
 ) -> str:
-    title = _nonempty(candidate.get("title"), f"{label} title")
     markdown = _nonempty(candidate.get("markdown"), f"{label} markdown")
     validate_markdown(markdown, required_h2=headings, label=label)
-    if title_of(markdown) != title:
-        raise ArtifactError(f"{label} title field must match its H1")
     return markdown
 
 

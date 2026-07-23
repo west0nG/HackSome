@@ -75,6 +75,9 @@ class CliTests(unittest.TestCase):
         self.assertEqual(settings.max_audiences, 4)
         self.assertEqual(settings.researchers_per_audience, 2)
         self.assertEqual(settings.idea_generators_per_problem, 6)
+        codex_config = _FakeWorkflow.create_calls[0][3]
+        self.assertEqual(codex_config.model, "gpt-5.6-terra")
+        self.assertEqual(codex_config.reasoning_effort, "high")
 
     def test_default_fanout_is_five_audiences_one_researcher_three_generators(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -87,6 +90,27 @@ class CliTests(unittest.TestCase):
         self.assertEqual(settings.max_audiences, 5)
         self.assertEqual(settings.researchers_per_audience, 1)
         self.assertEqual(settings.idea_generators_per_problem, 3)
+
+    def test_model_and_reasoning_effort_can_be_overridden(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(cli, "UsefulIdeaWorkflow", _FakeWorkflow):
+                code, _, _ = self.invoke(
+                    [
+                        "run",
+                        "--prompt",
+                        "Prompt",
+                        "--runs-dir",
+                        directory,
+                        "--model",
+                        "gpt-5.6-sol",
+                        "--reasoning-effort",
+                        "xhigh",
+                    ]
+                )
+        self.assertEqual(code, 0)
+        codex_config = _FakeWorkflow.create_calls[0][3]
+        self.assertEqual(codex_config.model, "gpt-5.6-sol")
+        self.assertEqual(codex_config.reasoning_effort, "xhigh")
 
     def test_challenge_file_is_read_as_utf8(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

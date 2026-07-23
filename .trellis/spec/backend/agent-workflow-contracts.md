@@ -42,6 +42,8 @@ max_concurrency = 4
 max_audiences = 5
 researchers_per_audience = 1
 idea_generators_per_problem = 3
+model = gpt-5.6-terra
+reasoning_effort = high
 ```
 
 ## 3. Session isolation
@@ -61,6 +63,11 @@ Only Research enables live web search. All other tasks explicitly disable it.
 Stage Sessions run without ambient plugins, skills, project documents, or user
 rules. They should use a read-only sandbox because canonical output is returned
 over structured stdout and persisted by the Hub.
+
+Every Run MUST persist its requested `model` and `reasoning_effort`. The runner
+MUST pass both explicitly to Codex instead of relying on the CLI's ambient
+default model. The v1 defaults are `gpt-5.6-terra` and `high`; CLI overrides are
+allowed and become part of the immutable Run configuration.
 
 ## 4. Prompt-as-transport contract
 
@@ -136,14 +143,17 @@ Used by Problem Writer and Idea Generator:
 ```json
 {
   "candidates": [
-    {"title": "non-empty", "markdown": "non-empty Markdown"}
+    {"markdown": "non-empty Markdown"}
   ]
 }
 ```
 
 Empty `candidates` is valid. The model MUST NOT assign canonical paths or
 lineage. The Hub validates required headings before publication and assigns
-stable IDs based on the parent task plus returned order.
+stable IDs based on the parent task plus returned order. The Markdown H1 is the
+only source of the candidate title; the Hub derives titles from it whenever an
+index or card needs one. Candidate transport MUST NOT duplicate the title in a
+second model-authored field.
 
 ### Review output
 
@@ -300,7 +310,10 @@ CLI surface:
 
 ```text
 hacksome doctor [--json]
-hacksome run (CHALLENGE | --prompt TEXT) [runtime/fanout options]
+hacksome run (CHALLENGE | --prompt TEXT)
+  [--model MODEL]
+  [--reasoning-effort low|medium|high|xhigh|max|ultra]
+  [runtime/fanout options]
 hacksome status RUN_DIR [--json]
 hacksome validate RUN_DIR
 ```
@@ -320,6 +333,8 @@ There is deliberately no `hacksome resume` command in v1.
 | Run timeout cancels an active task | terminate runner, persist cancellation, mark Run failed |
 | Prompt/request/result/output/artifact hash changes | offline validation returns a concrete mismatch |
 | Model returns zero final passes | publish a valid empty Idea Card index |
+| Unsupported reasoning-effort CLI value | argparse rejects before Run creation |
+| Requested model is unavailable to Codex | persist the non-zero task failure and stop the Run |
 
 ## 13. Good, base, and bad cases
 
@@ -335,6 +350,8 @@ There is deliberately no `hacksome resume` command in v1.
   upstream text.
 - Bad: an out-of-order parallel result uses the previous Problem's Gateway ref.
   Source refs must be recomputed from the current Problem during publication.
+- Bad: Run metadata records `model: null` and silently inherits a different
+  model after a Codex CLI update.
 
 ## 14. Required tests
 
@@ -351,6 +368,7 @@ The default suite MUST be offline and cover:
 - deterministic Idea Card publication and empty outputs;
 - complete task trace persistence and offline integrity validation;
 - deterministic ordering under out-of-order parallel completion.
+- explicit model/reasoning command arguments, CLI overrides, and Run metadata.
 
 Run before completion:
 
@@ -391,4 +409,16 @@ for problem, output in results:
     current_gateway_ref = problem.gateway_ref
     assert current_gateway_ref is not None
     publish_idea(source_refs=(problem.artifact_ref, current_gateway_ref))
+```
+
+### Wrong: inherit a moving Codex model default
+
+```python
+CodexConfig(model=None)
+```
+
+### Correct: pin model and reasoning effort in every Run
+
+```python
+CodexConfig(model="gpt-5.6-terra", reasoning_effort="high")
 ```

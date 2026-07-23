@@ -517,6 +517,12 @@ class CodexRunner:
         ]
         if self.config.model:
             command.extend(["--model", self.config.model])
+        command.extend(
+            [
+                "--config",
+                f'model_reasoning_effort="{self.config.reasoning_effort}"',
+            ]
+        )
         for feature in self.config.disabled_features:
             command.extend(["--disable", feature])
         for override in self.config.config_overrides:

@@ -8,6 +8,7 @@ from typing import Literal
 
 SandboxMode = Literal["read-only", "workspace-write", "danger-full-access"]
 ApprovalPolicy = Literal["untrusted", "on-failure", "on-request", "never"]
+ReasoningEffort = Literal["low", "medium", "high", "xhigh", "max", "ultra"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,7 +30,8 @@ class CodexConfig:
     subprocess_stream_limit_bytes: int = 1024 * 1024
     sandbox: SandboxMode = "read-only"
     approval_policy: ApprovalPolicy = "never"
-    model: str | None = None
+    model: str | None = "gpt-5.6-terra"
+    reasoning_effort: ReasoningEffort = "high"
     ignore_user_config: bool = True
     ignore_rules: bool = True
     skip_git_repo_check: bool = True
@@ -112,6 +114,15 @@ class CodexConfig:
             not isinstance(self.model, str) or not self.model.strip()
         ):
             raise ValueError("model must be omitted or non-empty")
+        if self.reasoning_effort not in {
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra",
+        }:
+            raise ValueError(f"unsupported reasoning effort: {self.reasoning_effort!r}")
         for name, values in (
             ("disabled_features", self.disabled_features),
             ("config_overrides", self.config_overrides),

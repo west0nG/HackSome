@@ -19,14 +19,12 @@ def _sections(headings: tuple[str, ...], value: str) -> str:
 
 def _problem(title: str) -> dict[str, str]:
     return {
-        "title": title,
         "markdown": f"# {title}\n\n{_sections(PROBLEM_HEADINGS, 'supported')}\n",
     }
 
 
 def _idea(title: str) -> dict[str, str]:
     return {
-        "title": title,
         "markdown": f"# {title}\n\n{_sections(IDEA_HEADINGS, 'complete')}\n",
     }
 

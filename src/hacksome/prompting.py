@@ -52,13 +52,13 @@ _SPECS = {
         "hacksome.idea.audience-research", "1", "audience-research.md", "document"
     ),
     "problem-write": _PromptSpec(
-        "hacksome.idea.problem-write", "1", "problem-write.md", "candidates"
+        "hacksome.idea.problem-write", "2", "problem-write.md", "candidates"
     ),
     "problem-gateway": _PromptSpec(
         "hacksome.idea.problem-gateway", "1", "problem-gateway.md", "review"
     ),
     "idea-generate": _PromptSpec(
-        "hacksome.idea.idea-generate", "1", "idea-generate.md", "candidates"
+        "hacksome.idea.idea-generate", "2", "idea-generate.md", "candidates"
     ),
     "idea-red-team": _PromptSpec(
         "hacksome.idea.idea-red-team", "1", "idea-red-team.md", "review"

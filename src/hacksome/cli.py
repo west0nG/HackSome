@@ -75,7 +75,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--runs-dir", type=Path, default=Path("runs"))
     run.add_argument("--run-id")
     run.add_argument("--codex", default=codex_defaults.executable, metavar="PATH")
-    run.add_argument("--model")
+    run.add_argument("--model", default=codex_defaults.model)
+    run.add_argument(
+        "--reasoning-effort",
+        choices=("low", "medium", "high", "xhigh", "max", "ultra"),
+        default=codex_defaults.reasoning_effort,
+    )
     run.add_argument(
         "--max-concurrency",
         type=_positive_int,
@@ -156,6 +161,7 @@ def _run_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> i
     config = CodexConfig(
         executable=args.codex,
         model=args.model,
+        reasoning_effort=args.reasoning_effort,
         max_concurrency=args.max_concurrency,
         infrastructure_retries=args.infrastructure_retries,
         default_timeout_seconds=args.task_timeout,
