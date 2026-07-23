@@ -25,10 +25,17 @@
 - benchmark 当前只完成严格 manifest、共享 Memory Snapshot、盲化 A/B、
   worksheet 与离线 evaluator 合同；没有实现在线 arm execution controller，
   CLI 会明确拒绝伪装成已执行或已恢复。
-- 待完成门禁：全量离线测试、最终 Useful smoke、wheel/resource 检查、
-  `origin/main` 最终同步、Draft PR。当前沙箱禁止绑定 loopback socket，
-  因此 HTTP 单测需在不可绑定时明确 skip，真实浏览器/LAN QA 记录为未执行，
-  不能用 mock 结果替代。
+- 已于 `8c80b6e` 合入 Weston 最新 `origin/main@1aaf61a`：保留 Useful
+  Gateway v3、Generator v5、Red Team v4 与 BuildFactory Lead wake gate；
+  route-aware `PromptCatalog` 增加显式历史版本 allowlist，旧冻结 Prompt 不会被
+  新版本字节或标签替换。
+- 最终离线门禁：ruff、mypy、compileall、Node UI syntax、CLI help smoke、
+  wheel build/resource inspection 全部通过；主项目 `250` tests passed、
+  `8` tests skipped、`0` failed。8 个 skip 仅为当前沙箱明确拒绝 loopback
+  socket 的真实 HTTP/lifecycle 测试，普通开发机/CI 仍会执行它们。
+- 待完成：再次 fetch `origin/main`、push、Draft PR。真实浏览器/LAN QA 与
+  在线双臂 benchmark 仍未执行，不能用 mock、离线 evaluator 或 plan-only CLI
+  结果替代。
 - 工作区存在与本任务无关的 Trellis 升级/onboarding 改动；提交必须使用精确
   文件列表，不能把这些文件一起 stage。
 
