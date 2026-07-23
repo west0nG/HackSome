@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from hacksome import cli
 
@@ -91,6 +91,64 @@ class CliTests(unittest.TestCase):
         self.assertEqual(settings.researchers_per_audience, 1)
         self.assertEqual(settings.idea_generators_per_problem, 3)
 
+    def test_explicit_useful_route_matches_default(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(cli, "UsefulIdeaWorkflow", _FakeWorkflow):
+                default_result = self.invoke(
+                    ["run", "--prompt", "Prompt", "--runs-dir", directory]
+                )
+                default_settings = _FakeWorkflow.create_calls[-1][2]
+                explicit_result = self.invoke(
+                    [
+                        "run",
+                        "--route",
+                        "useful",
+                        "--prompt",
+                        "Prompt",
+                        "--runs-dir",
+                        directory,
+                    ]
+                )
+                explicit_settings = _FakeWorkflow.create_calls[-1][2]
+        self.assertEqual(default_result, explicit_result)
+        self.assertEqual(default_settings, explicit_settings)
+
+    def test_creative_route_is_unavailable_without_creating_a_run(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            code, stdout, stderr = self.invoke(
+                [
+                    "run",
+                    "--route",
+                    "creative",
+                    "--prompt",
+                    "Prompt",
+                    "--runs-dir",
+                    directory,
+                    "--run-id",
+                    "must-not-exist",
+                ]
+            )
+            self.assertFalse((root / "must-not-exist").exists())
+        self.assertEqual(code, 1)
+        self.assertEqual(stdout, "")
+        self.assertIn("complete C0-C7 contract", stderr)
+
+    def test_useful_options_are_rejected_for_creative_route(self) -> None:
+        code, _, stderr = self.invoke(
+            [
+                "run",
+                "--route",
+                "creative",
+                "--prompt",
+                "Prompt",
+                "--max-audiences",
+                "4",
+            ]
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("--max-audiences can only be used", stderr)
+
     def test_model_and_reasoning_effort_can_be_overridden(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             with patch.object(cli, "UsefulIdeaWorkflow", _FakeWorkflow):
@@ -146,12 +204,54 @@ class CliTests(unittest.TestCase):
         with patch.object(cli, "inspect_run", return_value=status_payload):
             code, stdout, _ = self.invoke(["status", "runs/run-1"])
         self.assertEqual(code, 0)
-        self.assertIn("Idea Cards: 1", stdout)
+        self.assertEqual(
+            stdout,
+            (
+                "Run: run-1\n"
+                "Status: completed\n"
+                "Current stage: -\n"
+                "Tasks: succeeded=4\n"
+                "Decisions: 2\n"
+                "Idea Cards: 1\n"
+            ),
+        )
+
+        with patch.object(cli, "inspect_run", return_value=status_payload):
+            code, stdout, stderr = self.invoke(
+                ["status", "runs/run-1", "--json"]
+            )
+        self.assertEqual(code, 0)
+        self.assertEqual(stderr, "")
+        self.assertEqual(
+            stdout,
+            (
+                "{\n"
+                '  "current_stage": null,\n'
+                '  "decision_count": 2,\n'
+                '  "idea_card_count": 1,\n'
+                '  "run_id": "run-1",\n'
+                '  "status": "completed",\n'
+                '  "task_counts": {\n'
+                '    "succeeded": 4\n'
+                "  }\n"
+                "}\n"
+            ),
+        )
 
         with patch.object(cli, "validate_run", return_value=[]):
             code, stdout, _ = self.invoke(["validate", "runs/run-1"])
         self.assertEqual(code, 0)
         self.assertIn("Run is valid", stdout)
+
+    def test_reconcile_flushes_only_pending_records(self) -> None:
+        fake_hub = MagicMock()
+        fake_hub.reconcile_pending.return_value = 2
+        with patch.object(cli, "RunHub", return_value=fake_hub):
+            code, stdout, stderr = self.invoke(["reconcile", "runs/run-1"])
+        self.assertEqual(code, 0)
+        self.assertEqual(stderr, "")
+        self.assertEqual(stdout, "Reconciled records: 2\n")
+        fake_hub.reconcile_pending.assert_called_once_with()
 
 
 if __name__ == "__main__":

@@ -12,8 +12,11 @@ import json
 import os
 import tempfile
 import threading
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
+
+import fcntl
 
 
 class StateError(RuntimeError):
@@ -50,6 +53,30 @@ def _normalize_json(value: Any, *, label: str) -> Any:
         return json.loads(encoded)
     except (TypeError, ValueError) as exc:
         raise StateFormatError(f"{label} is not strict JSON: {exc}") from exc
+
+
+def normalize_json(value: Any, *, label: str = "JSON value") -> Any:
+    """Return a detached, strict-JSON-normalized value.
+
+    Persisted configuration and outbox records use the same canonicalization as
+    regular state files.  Keeping this helper public avoids subtly different
+    hashing rules in each persistence owner.
+    """
+
+    return _normalize_json(value, label=label)
+
+
+def canonical_json_bytes(value: Any) -> bytes:
+    """Encode strict JSON deterministically for hashing and request identity."""
+
+    normalized = _normalize_json(value, label="canonical JSON value")
+    return json.dumps(
+        normalized,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
 
 
 def atomic_write_bytes(path: str | Path, content: bytes) -> Path:
@@ -121,6 +148,51 @@ def sha256_text(content: str) -> str:
 
 def sha256_file(path: str | Path) -> str:
     return sha256_bytes(Path(path).read_bytes())
+
+
+def sha256_json(value: Any) -> str:
+    return sha256_bytes(canonical_json_bytes(value))
+
+
+@contextmanager
+def advisory_lease(
+    path: str | Path,
+    *,
+    exclusive: bool,
+    create: bool = True,
+    blocking: bool = True,
+) -> Iterator[None]:
+    """Hold a short-lived POSIX advisory lease for one regular lock file.
+
+    The caller, not this primitive, defines the protected state.  ``create`` is
+    deliberately controllable so read-only projection of legacy runs never
+    creates a lock as a side effect.
+    """
+
+    lease_path = Path(path)
+    if lease_path.is_symlink():
+        raise StateError(f"refusing symlink lease path: {lease_path}")
+    if not create and not lease_path.is_file():
+        raise StateError(f"lease file does not exist: {lease_path}")
+    if create:
+        lease_path.parent.mkdir(parents=True, exist_ok=True)
+    flags = os.O_RDWR
+    if create:
+        flags |= os.O_CREAT
+    descriptor = os.open(lease_path, flags, 0o600)
+    operation = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+    if not blocking:
+        operation |= fcntl.LOCK_NB
+    try:
+        fcntl.flock(descriptor, operation)
+        yield
+    except BlockingIOError as exc:
+        raise StateError(f"lease is already held: {lease_path}") from exc
+    finally:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
 
 
 def append_jsonl(

@@ -12,6 +12,7 @@ from typing import Any
 
 from hacksome.codex import CodexRunner
 from hacksome.config import CodexConfig
+from hacksome.hub import RunHub
 from hacksome.models import CodexDoctorResult
 from hacksome.state import StateError
 from hacksome.workflow import (
@@ -72,6 +73,12 @@ def build_parser() -> argparse.ArgumentParser:
     run = commands.add_parser("run", help="start a new Idea discovery run")
     run.add_argument("challenge", nargs="?", type=Path, help="UTF-8 challenge file")
     run.add_argument("--prompt", help="literal challenge instead of a file")
+    run.add_argument(
+        "--route",
+        choices=("useful", "creative"),
+        default="useful",
+        help="Idea workflow route (creative is enabled after its full contract lands)",
+    )
     run.add_argument("--runs-dir", type=Path, default=Path("runs"))
     run.add_argument("--run-id")
     run.add_argument("--codex", default=codex_defaults.executable, metavar="PATH")
@@ -91,18 +98,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=_non_negative_int,
         default=codex_defaults.infrastructure_retries,
     )
-    run.add_argument(
-        "--max-audiences", type=_audience_limit, default=defaults.max_audiences
-    )
+    run.add_argument("--max-audiences", type=_audience_limit, default=argparse.SUPPRESS)
     run.add_argument(
         "--researchers-per-audience",
         type=_positive_int,
-        default=defaults.researchers_per_audience,
+        default=argparse.SUPPRESS,
     )
     run.add_argument(
         "--idea-generators-per-problem",
         type=_positive_int,
-        default=defaults.idea_generators_per_problem,
+        default=argparse.SUPPRESS,
     )
     run.add_argument(
         "--task-timeout",
@@ -123,6 +128,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     validate = commands.add_parser("validate", help="validate a saved run offline")
     validate.add_argument("run_dir", type=Path)
+
+    reconcile = commands.add_parser(
+        "reconcile",
+        help="flush durable run records without calling an Agent",
+    )
+    reconcile.add_argument("run_dir", type=Path)
 
     doctor = commands.add_parser("doctor", help="check Codex CLI and login")
     doctor.add_argument("--codex", default=codex_defaults.executable, metavar="PATH")
@@ -151,10 +162,35 @@ def _read_challenge(args: argparse.Namespace, parser: argparse.ArgumentParser) -
 
 def _run_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     challenge = _read_challenge(args, parser)
+    if args.route != "useful":
+        useful_options = (
+            "max_audiences",
+            "researchers_per_audience",
+            "idea_generators_per_problem",
+        )
+        supplied = [name for name in useful_options if hasattr(args, name)]
+        if supplied:
+            rendered = ", ".join("--" + name.replace("_", "-") for name in supplied)
+            raise ValueError(
+                f"{rendered} can only be used with --route useful"
+            )
+        raise ValueError(
+            "the creative route is not executable until its complete C0-C7 "
+            "contract is installed"
+        )
+    defaults = WorkflowSettings()
     settings = WorkflowSettings(
-        max_audiences=args.max_audiences,
-        researchers_per_audience=args.researchers_per_audience,
-        idea_generators_per_problem=args.idea_generators_per_problem,
+        max_audiences=getattr(args, "max_audiences", defaults.max_audiences),
+        researchers_per_audience=getattr(
+            args,
+            "researchers_per_audience",
+            defaults.researchers_per_audience,
+        ),
+        idea_generators_per_problem=getattr(
+            args,
+            "idea_generators_per_problem",
+            defaults.idea_generators_per_problem,
+        ),
         task_timeout_seconds=args.task_timeout,
         run_timeout_seconds=args.run_timeout,
     )
@@ -208,6 +244,12 @@ def _validate_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _reconcile_command(args: argparse.Namespace) -> int:
+    count = RunHub(args.run_dir).reconcile_pending()
+    print(f"Reconciled records: {count}")
+    return 0
+
+
 def _doctor_payload(result: CodexDoctorResult) -> dict[str, Any]:
     return {
         "healthy": result.healthy,
@@ -249,6 +291,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _status_command(args)
         if args.command == "validate":
             return _validate_command(args)
+        if args.command == "reconcile":
+            return _reconcile_command(args)
         if args.command == "doctor":
             return _doctor_command(args)
     except KeyboardInterrupt:
