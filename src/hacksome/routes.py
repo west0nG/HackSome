@@ -201,6 +201,38 @@ class CreativeRunContract:
         )
         wait = state.get("wait")
         review = wait if isinstance(wait, dict) else {}
+        review_batch_ref = _first_artifact_of_type(
+            artifacts, "creative_human_review_batch"
+        )
+        review_batch: dict[str, Any] = {}
+        if review_batch_ref is not None:
+            try:
+                raw_batch = json.loads(hub.read_artifact(review_batch_ref))
+            except (OSError, UnicodeError, json.JSONDecodeError, StateError):
+                raw_batch = None
+            if isinstance(raw_batch, dict):
+                review_batch = raw_batch
+        review_status = review.get("status")
+        if not isinstance(review_status, str):
+            candidate_status = review_batch.get("status")
+            review_status = (
+                candidate_status
+                if isinstance(candidate_status, str)
+                else "not_started"
+            )
+        round_id = review.get("round_id")
+        if not isinstance(round_id, str):
+            candidate_round = review_batch.get("round_id")
+            round_id = candidate_round if isinstance(candidate_round, str) else None
+        batch_refs = review_batch.get("concepts", [])
+        batch_shortlist_count = (
+            len(batch_refs) if isinstance(batch_refs, list) else 0
+        )
+        zero_reason_code = state.get("zero_reason_code")
+        if zero_reason_code is None:
+            candidate_reason = review_batch.get("skip_reason")
+            if isinstance(candidate_reason, str):
+                zero_reason_code = candidate_reason
         report_ref = _first_artifact_of_type(
             artifacts, "creative_idea_report_json"
         )
@@ -238,12 +270,21 @@ class CreativeRunContract:
                 else "not_started",
             },
             "review": {
-                "round_id": review.get("round_id"),
-                "status": review.get("status", "not_started"),
+                "round_id": round_id,
+                "batch_ref": review_batch_ref,
+                "status": review_status,
                 "reviewer_count": 0,
                 "covered_concept_count": 0,
-                "shortlist_count": len(shortlisted),
-                "resumable": review.get("status") == "closed",
+                "shortlist_count": max(
+                    len(shortlisted),
+                    batch_shortlist_count,
+                ),
+                "resumable": (
+                    review.get("status") == "closed"
+                    and core["status"] == "waiting"
+                    and core["current_stage"] == "creative-human-review"
+                    and not core["needs_reconcile"]
+                ),
             },
             "finalization": {
                 "status": "not_started",
@@ -252,7 +293,7 @@ class CreativeRunContract:
                 "published_artifact_count": 0,
                 "resumable": False,
             },
-            "zero_reason_code": state.get("zero_reason_code"),
+            "zero_reason_code": zero_reason_code,
             "report_ref": report_ref,
             "partial_report_ref": partial_report_ref,
             "needs_reconcile": core["needs_reconcile"],
@@ -268,7 +309,11 @@ class CreativeRunContract:
             PersistedConfigError,
             decode_persisted_dataclass,
         )
-        from hacksome.creative.contracts import CreativeWorkflowSettings
+        from hacksome.creative.contracts import (
+            C6C_FEEDBACK_REVISE,
+            CreativeWorkflowSettings,
+            final_idea_id,
+        )
         from hacksome.creative.memory import (
             MemoryCapsuleRef,
             MemoryRemixSlot,
@@ -278,6 +323,12 @@ class CreativeRunContract:
         )
         from hacksome.creative.prompting import (
             creative_prompt_catalog,
+        )
+        from hacksome.creative.review import (
+            ReviewBatch,
+            ReviewError,
+            ReviewRound,
+            ReviewStore,
         )
 
         errors: list[str] = []
@@ -437,6 +488,12 @@ class CreativeRunContract:
             if isinstance(record, dict)
             and record.get("artifact_type") == "creative_concept"
         }
+        final_ideas = {
+            str(artifact_id): record
+            for artifact_id, record in artifacts.items()
+            if isinstance(record, dict)
+            and record.get("artifact_type") == "creative_final_idea"
+        }
         atom_records = {
             str(artifact_id): record
             for artifact_id, record in artifacts.items()
@@ -447,11 +504,13 @@ class CreativeRunContract:
         memory_count = 0
         revisions: dict[str, set[int]] = {}
         revision_reasons: dict[str, list[str]] = {}
+        concept_metadata: dict[str, dict[str, Any]] = {}
         for artifact_id, record in concepts.items():
             metadata = record.get("metadata")
             if not isinstance(metadata, dict):
                 errors.append(f"Creative Concept {artifact_id} has no metadata")
                 continue
+            concept_metadata[artifact_id] = metadata
             concept_id = metadata.get("concept_id")
             revision = metadata.get("revision")
             origin = metadata.get("origin")
@@ -551,6 +610,61 @@ class CreativeRunContract:
                     errors.append(
                         f"Creative Concept {concept_id} exceeds {reason} budget"
                     )
+        for artifact_id, metadata in concept_metadata.items():
+            revision = metadata.get("revision")
+            concept_id = metadata.get("concept_id")
+            if (
+                isinstance(revision, bool)
+                or not isinstance(revision, int)
+                or revision <= 1
+                or not isinstance(concept_id, str)
+            ):
+                continue
+            expected_source = f"{concept_id}-r{revision - 1:03d}"
+            source_ref = metadata.get("supersedes_ref")
+            if source_ref != expected_source:
+                errors.append(
+                    f"Creative Concept {artifact_id} has invalid supersedes_ref"
+                )
+                continue
+            source_metadata = concept_metadata.get(expected_source)
+            if source_metadata is None:
+                errors.append(
+                    f"Creative Concept {artifact_id} supersedes unknown revision"
+                )
+                continue
+            for key in (
+                "origin",
+                "primary_territory_ref",
+                "parent_atom_refs",
+                "memory_cue_refs",
+                "memory_source_refs",
+            ):
+                if metadata.get(key, []) != source_metadata.get(key, []):
+                    errors.append(
+                        f"Creative Concept {artifact_id} changed lineage field {key}"
+                    )
+            reason = metadata.get("revision_reason")
+            source_task = concepts[artifact_id].get("task_id")
+            task_record = tasks.get(source_task) if isinstance(source_task, str) else None
+            expected_stage = {
+                "cheap_hook_repair": "creative-cheap-hook-repair",
+                "evidence_informed": "creative-evidence-revise",
+                "human_feedback": "creative-feedback-revise",
+            }.get(reason if isinstance(reason, str) else "")
+            if expected_stage is None:
+                errors.append(
+                    f"Creative Concept {artifact_id} has invalid revision reason"
+                )
+            elif (
+                not isinstance(task_record, dict)
+                or task_record.get("stage") != expected_stage
+                or task_record.get("status") != "succeeded"
+            ):
+                errors.append(
+                    f"Creative Concept {artifact_id} has no successful "
+                    f"{expected_stage} task"
+                )
 
         decisions = []
         try:
@@ -566,6 +680,7 @@ class CreativeRunContract:
         terminal_counts: dict[str, int] = {}
         hook_passed: set[str] = set()
         c4_routing: dict[str, list[dict[str, Any]]] = {}
+        dispositions_by_concept: dict[str, list[dict[str, Any]]] = {}
         for disposition in dispositions:
             concept_ref = disposition.get("concept_revision_ref")
             if concept_ref not in concepts:
@@ -574,6 +689,9 @@ class CreativeRunContract:
                 )
                 continue
             concept_record = concepts[str(concept_ref)]
+            dispositions_by_concept.setdefault(str(concept_ref), []).append(
+                disposition
+            )
             if disposition.get("concept_sha256") != concept_record.get("sha256"):
                 errors.append(
                     f"Creative disposition Concept hash mismatch: {concept_ref}"
@@ -600,17 +718,81 @@ class CreativeRunContract:
                     disposition
                 )
             target = disposition.get("target_ref")
-            if target is not None and target not in concepts:
+            successor_concept_outcomes = {
+                "superseded_by_hook_repair",
+                "superseded_by_evidence_revision",
+            }
+            successor_final_outcomes = {
+                "promoted_to_final",
+                "revised_into",
+                "merged_into",
+            }
+            if (
+                target is not None
+                and (
+                    outcome in successor_concept_outcomes
+                    and target not in concepts
+                    or outcome in successor_final_outcomes
+                    and target not in final_ideas
+                    or outcome
+                    not in successor_concept_outcomes
+                    | successor_final_outcomes
+                )
+            ):
                 errors.append(
                     f"Creative disposition target does not exist: {target}"
                 )
-            if outcome in {"superseded_by_hook_repair"} and target is None:
+            if outcome in successor_concept_outcomes | successor_final_outcomes and (
+                target is None
+            ):
                 errors.append(
                     f"Creative disposition {outcome} requires target_ref"
                 )
-            if outcome in {"eliminated"} and target is not None:
+            if outcome in {
+                "eliminated",
+                "not_shortlisted",
+                "human_reject",
+                "human_taste_veto",
+            } and target is not None:
                 errors.append(
                     f"Creative disposition {outcome} must not have target_ref"
+                )
+            expected_stage = {
+                "pass": "C4",
+                "repair": "C4",
+                "eliminated": "C4",
+                "superseded_by_hook_repair": "C4",
+                "superseded_by_evidence_revision": "C6A",
+                "shortlisted": "C6B",
+                "not_shortlisted": "C6B",
+                "promoted_to_final": "C6C",
+                "revised_into": "C6C",
+                "human_reject": "C6C",
+                "human_taste_veto": "C6C",
+                "merged_into": "C6C",
+            }.get(outcome if isinstance(outcome, str) else "")
+            if expected_stage is not None and disposition.get("stage") != expected_stage:
+                errors.append(
+                    f"Creative disposition {outcome} must use stage {expected_stage}"
+                )
+            if outcome in {"pass", "repair", "shortlisted"}:
+                if terminal is not False or target is not None:
+                    errors.append(
+                        f"Creative disposition {outcome} must be non-terminal"
+                    )
+            elif outcome in {
+                "eliminated",
+                "superseded_by_hook_repair",
+                "superseded_by_evidence_revision",
+                "not_shortlisted",
+                "promoted_to_final",
+                "revised_into",
+                "human_reject",
+                "human_taste_veto",
+                "merged_into",
+            } and terminal is not True:
+                errors.append(
+                    f"Creative disposition {outcome} must be terminal"
                 )
         if any(count > 1 for count in terminal_counts.values()):
             errors.append("Creative Concept revision has multiple terminal dispositions")
@@ -636,8 +818,19 @@ class CreativeRunContract:
                     artifact_id
                 )
 
-        if state.get("current_stage") == "creative-c5-complete-internal":
+        if state.get("current_stage") in {
+            "creative-c5-complete-internal",
+            "creative-evidence-revise",
+            "creative-portfolio-curate",
+            "creative-human-review",
+            "creative-c6-empty-complete-internal",
+        }:
             for concept_ref in sorted(concepts):
+                if _metadata_value(
+                    concepts[concept_ref],
+                    "revision_reason",
+                ) in {"evidence_informed", "human_feedback"}:
+                    continue
                 routing = c4_routing.get(concept_ref, [])
                 if len(routing) != 1:
                     errors.append(
@@ -656,6 +849,497 @@ class CreativeRunContract:
                     errors.append(
                         f"non-pass Concept {concept_ref} must not have a "
                         "Novelty Scan"
+                    )
+
+        evidence_concepts = {
+            artifact_id: record
+            for artifact_id, record in concepts.items()
+            if _metadata_value(record, "revision_reason") == "evidence_informed"
+        }
+        for artifact_id, record in evidence_concepts.items():
+            metadata = record.get("metadata")
+            if not isinstance(metadata, dict):
+                continue
+            source_ref = metadata.get("supersedes_ref")
+            if source_ref not in hook_passed:
+                errors.append(
+                    f"C6A Concept {artifact_id} does not supersede a C4-pass source"
+                )
+            novelty_ref = metadata.get("novelty_scan_ref")
+            if (
+                not isinstance(novelty_ref, str)
+                or novelty_ref not in novelty_records
+                or novelty_ref
+                not in novelty_by_concept.get(str(source_ref), [])
+            ):
+                errors.append(
+                    f"C6A Concept {artifact_id} has no bound source Novelty Scan"
+                )
+            source_dispositions = [
+                row
+                for row in dispositions_by_concept.get(str(source_ref), [])
+                if row.get("outcome")
+                == "superseded_by_evidence_revision"
+                and row.get("target_ref") == artifact_id
+            ]
+            if len(source_dispositions) != 1:
+                errors.append(
+                    f"C6A Concept {artifact_id} requires exactly one source "
+                    "successor disposition"
+                )
+
+        curation_records = {
+            str(artifact_id): record
+            for artifact_id, record in artifacts.items()
+            if isinstance(record, dict)
+            and record.get("artifact_type") == "creative_portfolio_curation"
+        }
+        expected_curation_refs = set(evidence_concepts)
+        for artifact_id, record in curation_records.items():
+            task_id = record.get("task_id")
+            task_record = tasks.get(task_id) if isinstance(task_id, str) else None
+            if (
+                not isinstance(task_record, dict)
+                or task_record.get("stage") != "creative-portfolio-curate"
+                or task_record.get("status") != "succeeded"
+            ):
+                errors.append(
+                    f"Portfolio curation {artifact_id} has no successful curator task"
+                )
+            source_refs = record.get("source_refs")
+            if (
+                not isinstance(source_refs, list)
+                or set(source_refs) != expected_curation_refs
+                or len(source_refs) != len(expected_curation_refs)
+            ):
+                errors.append(
+                    f"Portfolio curation {artifact_id} has an invalid Concept pool"
+                )
+            try:
+                raw_curation = json.loads(hub.read_artifact(artifact_id))
+            except (
+                OSError,
+                UnicodeError,
+                json.JSONDecodeError,
+                StateError,
+            ) as exc:
+                errors.append(f"invalid Portfolio curation {artifact_id}: {exc}")
+                continue
+            rows = (
+                raw_curation.get("classifications")
+                if isinstance(raw_curation, dict)
+                else None
+            )
+            if not isinstance(rows, list):
+                errors.append(
+                    f"Portfolio curation {artifact_id} has no classifications"
+                )
+                continue
+            classified_refs: list[str] = []
+            for row in rows:
+                if not isinstance(row, dict):
+                    errors.append(
+                        f"Portfolio curation {artifact_id} has invalid row"
+                    )
+                    continue
+                reference = row.get("concept_ref")
+                decision = row.get("decision")
+                if not isinstance(reference, str):
+                    errors.append(
+                        f"Portfolio curation {artifact_id} has invalid Concept ref"
+                    )
+                else:
+                    classified_refs.append(reference)
+                if decision not in {"include", "hold", "exclude"}:
+                    errors.append(
+                        f"Portfolio curation {artifact_id} has invalid decision"
+                    )
+                if "primary_territory_ref" in row or "score" in row:
+                    errors.append(
+                        f"Portfolio curation {artifact_id} rewrites controller data"
+                    )
+            if (
+                set(classified_refs) != expected_curation_refs
+                or len(classified_refs) != len(expected_curation_refs)
+            ):
+                errors.append(
+                    f"Portfolio curation {artifact_id} does not cover C6A exactly"
+                )
+
+        batch_records = {
+            str(artifact_id): record
+            for artifact_id, record in artifacts.items()
+            if isinstance(record, dict)
+            and record.get("artifact_type") == "creative_human_review_batch"
+        }
+        if len(batch_records) > 1:
+            errors.append("Creative C6 may publish only one HumanReviewBatch")
+        review_batch: ReviewBatch | None = None
+        batch_id: str | None = None
+        batch_record: dict[str, Any] | None = None
+        shortlist_refs: set[str] = set()
+        closed_resolution_id: str | None = None
+        closed_resolution_sha256: str | None = None
+        if len(batch_records) == 1:
+            batch_id, batch_record = next(iter(batch_records.items()))
+            try:
+                raw_batch = json.loads(hub.read_artifact(batch_id))
+            except (
+                OSError,
+                UnicodeError,
+                json.JSONDecodeError,
+                StateError,
+            ) as exc:
+                errors.append(f"invalid HumanReviewBatch {batch_id}: {exc}")
+            else:
+                if isinstance(raw_batch, dict):
+                    try:
+                        review_batch = ReviewBatch.from_dict(raw_batch)
+                    except ReviewError as exc:
+                        errors.append(
+                            f"invalid HumanReviewBatch {batch_id}: {exc}"
+                        )
+                else:
+                    errors.append("HumanReviewBatch payload must be an object")
+
+        if (
+            review_batch is not None
+            and batch_record is not None
+            and batch_id is not None
+        ):
+            refs = list(review_batch.concept_refs)
+            shortlist_refs = set(refs)
+            skip_reason = review_batch.skip_reason
+            if (
+                review_batch.batch_id != batch_id
+                or review_batch.run_id != state.get("run_id")
+            ):
+                errors.append("HumanReviewBatch identity does not match its run")
+            max_shortlist = (
+                int(settings.max_human_shortlist)
+                if settings is not None
+                else 8
+            )
+            if len(refs) > max_shortlist:
+                errors.append("HumanReviewBatch exceeds persisted shortlist limit")
+            if any(ref not in evidence_concepts for ref in refs):
+                errors.append("HumanReviewBatch references a non-C6A Concept")
+            for binding in review_batch.concepts:
+                reference = binding.concept_ref
+                batch_concept_record = concepts.get(reference)
+                if (
+                    not isinstance(batch_concept_record, dict)
+                    or binding.concept_sha256 != batch_concept_record.get("sha256")
+                ):
+                    errors.append(
+                        f"HumanReviewBatch Concept hash mismatch: {reference}"
+                    )
+            c6b_outcomes: dict[str, list[str]] = {}
+            for reference in evidence_concepts:
+                outcomes = [
+                    str(row.get("outcome"))
+                    for row in dispositions_by_concept.get(reference, [])
+                    if row.get("stage") == "C6B"
+                    and row.get("outcome")
+                    in {"shortlisted", "not_shortlisted"}
+                ]
+                c6b_outcomes[reference] = outcomes
+                if len(outcomes) != 1:
+                    errors.append(
+                        f"C6A Concept {reference} requires exactly one C6B disposition"
+                    )
+            disposition_shortlist = {
+                reference
+                for reference, outcomes in c6b_outcomes.items()
+                if outcomes == ["shortlisted"]
+            }
+            if set(refs) != disposition_shortlist:
+                errors.append(
+                    "HumanReviewBatch refs do not match shortlisted dispositions"
+                )
+            wait = state.get("wait")
+            if review_batch.status == "ready":
+                if len(curation_records) != 2:
+                    errors.append(
+                        "non-empty C6 shortlist requires two independent curators"
+                    )
+                review_round = ReviewRound.open(review_batch)
+                common_round_binding = (
+                    isinstance(wait, dict)
+                    and wait.get("kind") == "creative_human_review"
+                    and wait.get("round_id") == review_round.round_id
+                    and wait.get("round_artifact_id") == batch_id
+                    and wait.get("round_sha256") == review_round.round_sha256
+                    and wait.get("batch_sha256") == review_batch.batch_sha256
+                    and wait.get("batch_artifact_sha256")
+                    == batch_record.get("sha256")
+                    and wait.get("status") in {"open", "closed"}
+                )
+                wait_status = wait.get("status") if isinstance(wait, dict) else None
+                lifecycle_matches = (
+                    wait_status == "open"
+                    and state.get("status") == "waiting"
+                    and state.get("current_stage") == "creative-human-review"
+                ) or (
+                    wait_status == "closed"
+                    and (
+                        (
+                            state.get("status") == "waiting"
+                            and state.get("current_stage")
+                            == "creative-human-review"
+                        )
+                        or (
+                            state.get("status") == "running"
+                            and state.get("current_stage")
+                            in {
+                                "creative-feedback-revise",
+                                "creative-c6-feedback-complete-internal",
+                                "creative-finalization",
+                            }
+                        )
+                        or state.get("status") in {"failed", "completed"}
+                    )
+                )
+                if (
+                    not common_round_binding
+                    or not lifecycle_matches
+                ):
+                    errors.append(
+                        "ready HumanReviewBatch does not match persisted ReviewRound"
+                    )
+                try:
+                    review_snapshot = ReviewStore(
+                        hub,
+                        review_round,
+                    ).snapshot()
+                except (OSError, StateError, ReviewError) as exc:
+                    errors.append(f"invalid persisted ReviewRound: {exc}")
+                else:
+                    resolution = review_snapshot.resolution
+                    if wait_status == "open" and resolution is not None:
+                        errors.append(
+                            "open ReviewRound must not have a persisted resolution"
+                        )
+                    elif wait_status == "closed":
+                        if resolution is None:
+                            errors.append(
+                                "closed ReviewRound has no persisted resolution"
+                            )
+                        else:
+                            closed_resolution_id = resolution.resolution_id
+                            closed_resolution_sha256 = (
+                                resolution.resolution_sha256
+                            )
+                            if not isinstance(wait, dict) or any(
+                                wait.get(key) != expected
+                                for key, expected in (
+                                    (
+                                        "resolution_id",
+                                        resolution.resolution_id,
+                                    ),
+                                    (
+                                        "resolution_sha256",
+                                        resolution.resolution_sha256,
+                                    ),
+                                    (
+                                        "latest_receipt_set_sha256",
+                                        resolution.latest_receipt_set_sha256,
+                                    ),
+                                    (
+                                        "approved_feedback_set_sha256",
+                                        resolution.approved_feedback_set_sha256,
+                                    ),
+                                )
+                            ):
+                                errors.append(
+                                    "closed ReviewRound resolution binding is stale"
+                                )
+            else:
+                if wait is not None or state.get("status") == "waiting":
+                    errors.append("empty HumanReviewBatch must not create a wait")
+                expected_reason = (
+                    "no_concepts_generated"
+                    if base_count + memory_count == 0
+                    else "all_candidates_failed_hook"
+                    if not hook_passed
+                    else "shortlist_empty"
+                )
+                if skip_reason != expected_reason:
+                    errors.append(
+                        "empty HumanReviewBatch skip_reason does not match routing"
+                    )
+                if skip_reason == "shortlist_empty" and len(curation_records) != 2:
+                    errors.append(
+                        "shortlist_empty requires two independent curators"
+                    )
+                if skip_reason != "shortlist_empty" and curation_records:
+                    errors.append(
+                        "pre-curation empty batch must not run portfolio curators"
+                    )
+            if expected_curation_refs and set(hook_passed) != {
+                str(_metadata_value(record, "supersedes_ref"))
+                for record in evidence_concepts.values()
+            }:
+                errors.append(
+                    "every C4-pass Concept must receive exactly one C6A revision"
+                )
+
+        c6c_tasks = {
+            str(task_id): record
+            for task_id, record in tasks.items()
+            if isinstance(record, dict)
+            and record.get("stage") == C6C_FEEDBACK_REVISE
+        }
+        for task_id, record in c6c_tasks.items():
+            parent_refs = record.get("parent_refs")
+            if (
+                not isinstance(parent_refs, list)
+                or any(not isinstance(ref, str) for ref in parent_refs)
+            ):
+                errors.append(f"C6C task {task_id} has invalid parent_refs")
+                continue
+            # C6C task parent refs deliberately span two namespaces:
+            # artifacts provide source/evidence lineage, while exactly one
+            # immutable resolution ledger ID authorizes the human-feedback
+            # transition.
+            if (
+                closed_resolution_id is None
+                or parent_refs.count(closed_resolution_id) != 1
+            ):
+                errors.append(
+                    f"C6C task {task_id} must name its closed resolution "
+                    "exactly once"
+                )
+            source_parents = {
+                ref for ref in parent_refs if ref in concepts
+            }
+            if (
+                not source_parents
+                or not source_parents.issubset(shortlist_refs)
+            ):
+                errors.append(
+                    f"C6C task {task_id} has invalid shortlisted Concept parents"
+                )
+
+        expected_final_refs = {
+            final_idea_id(index)
+            for index in range(1, len(final_ideas) + 1)
+        }
+        if set(final_ideas) != expected_final_refs:
+            errors.append("Creative Final Idea IDs are not contiguous")
+        for idea_ref, record in final_ideas.items():
+            metadata = record.get("metadata")
+            if not isinstance(metadata, dict):
+                errors.append(f"Final Idea {idea_ref} has no metadata")
+                continue
+            action = metadata.get("action")
+            source_refs = metadata.get("source_concept_refs")
+            registered_sources = record.get("source_refs")
+            if (
+                not isinstance(source_refs, list)
+                or not source_refs
+                or any(not isinstance(ref, str) for ref in source_refs)
+                or len(source_refs) != len(set(source_refs))
+                or not set(source_refs).issubset(shortlist_refs)
+                or registered_sources != source_refs
+            ):
+                errors.append(
+                    f"Final Idea {idea_ref} has invalid shortlisted sources"
+                )
+                continue
+            if (
+                action in {"keep", "revise"}
+                and len(source_refs) != 1
+                or action == "merge"
+                and len(source_refs) < 2
+                or action not in {"keep", "revise", "merge"}
+            ):
+                errors.append(f"Final Idea {idea_ref} has invalid action lineage")
+                continue
+            source_records = [concepts[ref] for ref in source_refs]
+            source_hashes = [source.get("sha256") for source in source_records]
+            source_territories = {
+                _metadata_value(source, "primary_territory_ref")
+                for source in source_records
+            }
+            if metadata.get("source_concept_sha256s") != source_hashes:
+                errors.append(f"Final Idea {idea_ref} source hash mismatch")
+            if (
+                metadata.get("resolution_id") != closed_resolution_id
+                or metadata.get("resolution_sha256")
+                != closed_resolution_sha256
+            ):
+                errors.append(f"Final Idea {idea_ref} resolution binding is stale")
+            if metadata.get("primary_territory_ref") not in source_territories:
+                errors.append(f"Final Idea {idea_ref} changed primary territory")
+
+            task_id = record.get("task_id")
+            if action == "keep":
+                if task_id is not None or record.get("sha256") != source_hashes[0]:
+                    errors.append(
+                        f"kept Final Idea {idea_ref} is not byte-exact"
+                    )
+            else:
+                task_record = (
+                    tasks.get(task_id) if isinstance(task_id, str) else None
+                )
+                if (
+                    not isinstance(task_record, dict)
+                    or task_record.get("stage") != C6C_FEEDBACK_REVISE
+                    or task_record.get("status") != "succeeded"
+                ):
+                    errors.append(
+                        f"Final Idea {idea_ref} has no successful C6C task"
+                    )
+                else:
+                    task_parents = task_record.get("parent_refs")
+                    concept_parents = {
+                        ref
+                        for ref in task_parents
+                        if isinstance(ref, str) and ref in concepts
+                    } if isinstance(task_parents, list) else set()
+                    if concept_parents != set(source_refs):
+                        errors.append(
+                            f"Final Idea {idea_ref} task/source lineage mismatch"
+                        )
+
+        c6c_dispositions = [
+            row for row in dispositions if row.get("stage") == "C6C"
+        ]
+        for disposition in c6c_dispositions:
+            if disposition.get("concept_revision_ref") not in shortlist_refs:
+                errors.append(
+                    "C6C disposition references a non-shortlisted Concept"
+                )
+        disposition_targets = {
+            str(row["target_ref"])
+            for row in c6c_dispositions
+            if row.get("target_ref") is not None
+        }
+        if disposition_targets != set(final_ideas):
+            errors.append(
+                "C6C dispositions do not close every Final Idea target"
+            )
+        c6c_complete = (
+            state.get("current_stage")
+            in {
+                "creative-c6-feedback-complete-internal",
+                "creative-finalization",
+            }
+            or state.get("status") == "completed"
+        )
+        if c6c_complete:
+            for concept_ref in shortlist_refs:
+                source_rows = [
+                    row
+                    for row in c6c_dispositions
+                    if row.get("concept_revision_ref") == concept_ref
+                    and row.get("terminal") is True
+                ]
+                if len(source_rows) != 1:
+                    errors.append(
+                        f"shortlisted Concept {concept_ref} requires exactly "
+                        "one terminal C6C disposition"
                     )
 
         summaries = [

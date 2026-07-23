@@ -1,9 +1,9 @@
-"""Internal C0-C5 Creative workflow.
+"""Creative generation, evidence revision, and shortlist workflow.
 
-The public CLI intentionally does not expose this route until C6/C7 exist.  The
-controller nevertheless persists a complete, inspectable C0-C5 prefix so the
-generation, Hook gate, optional Idea Memory branch, and novelty policy can be
-tested independently.
+The public CLI intentionally does not expose this route until C7 exists.  The
+controller can nevertheless execute through the C6 boundary: a non-empty
+shortlist enters the normal human-review wait, while an empty batch returns a
+typed hand-off for deterministic C7 finalization.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping, Protocol, Sequence, cast
+from typing import Any, Callable, Literal, Mapping, Protocol, Sequence, cast
 
 from hacksome.codex import CodexRunner
 from hacksome.config import (
@@ -30,9 +30,13 @@ from hacksome.creative.contracts import (
     C5M_MEMORY_RECALL,
     C5M_MEMORY_REMIX,
     C5W_NOVELTY_SCAN,
+    C6A_EVIDENCE_REVISE,
+    C6B_PORTFOLIO_CURATE,
     CreativeWorkflowSettings,
     DEFAULT_CREATIVE_BRIEF,
     DEFAULT_TERRITORY_LENSES,
+    RevisionBudget,
+    RevisionReason,
     atom_id,
     base_concept_id,
     concept_revision_ref,
@@ -51,6 +55,11 @@ from hacksome.creative.prompting import (
     creative_prompt_catalog,
     validate_creative_output,
 )
+from hacksome.creative.review import (
+    ConceptBinding,
+    ReviewBatch,
+    ReviewRound,
+)
 from hacksome.hub import RunHub
 from hacksome.models import CodexTask
 from hacksome.prompting import PromptCatalog
@@ -67,6 +76,8 @@ from hacksome.task_executor import (
 
 
 INTERNAL_C5_COMPLETE_STAGE = "creative-c5-complete-internal"
+INTERNAL_C6_EMPTY_COMPLETE_STAGE = "creative-c6-empty-complete-internal"
+CREATIVE_HUMAN_REVIEW_STAGE = "creative-human-review"
 DEFAULT_RUN_TIMEOUT_SECONDS = 6 * 60 * 60
 
 SYNTHESIS_LENSES = (
@@ -146,6 +157,22 @@ class CreativeC0C5Outcome:
     hook_passed_refs: tuple[str, ...]
     novelty_scan_refs: tuple[str, ...]
     memory_summary_ref: str
+
+
+@dataclass(frozen=True, slots=True)
+class CreativeRunOutcome:
+    """Typed C6 boundary consumed by the future C7/public CLI composition.
+
+    ``completed`` means C6 completed with an empty immutable batch and no human
+    wait; the run intentionally remains ``running`` at the internal C7 hand-off
+    until the deterministic report implementation publishes the real terminal
+    result.
+    """
+
+    status: Literal["waiting", "completed"]
+    run_dir: Path
+    primary_artifact: Path
+    next_command: str | None
 
 
 class CreativeIdeaWorkflow:
@@ -402,6 +429,672 @@ class CreativeIdeaWorkflow:
             novelty_scan_refs=novelty_refs,
             memory_summary_ref=memory.summary_ref,
         )
+
+    async def execute(self) -> CreativeRunOutcome:
+        """Execute through C6A/C6B and return a typed wait/C7 hand-off.
+
+        C6C deliberately is not handled here.  The review domain owns closing
+        the immutable round; a later ``resume`` composition will consume that
+        closed resolution and run C6C exactly once where requested.
+        """
+
+        prefix = await self.execute_c0_c5()
+        stage = C6A_EVIDENCE_REVISE
+        try:
+            async with asyncio.timeout(self.run_timeout_seconds):
+                hook_passed = tuple(
+                    self._concept_from_artifact(reference)
+                    for reference in prefix.hook_passed_refs
+                )
+                if not hook_passed:
+                    skip_reason = (
+                        "no_concepts_generated"
+                        if not (
+                            prefix.base_concept_refs
+                            or prefix.memory_challenger_refs
+                        )
+                        else "all_candidates_failed_hook"
+                    )
+                    batch_ref, _ = self._publish_review_batch(
+                        concept_refs=(),
+                        skip_reason=skip_reason,
+                    )
+                    self.hub.set_wait(None)
+                    self.hub.set_run_status(
+                        "running",
+                        stage=INTERNAL_C6_EMPTY_COMPLETE_STAGE,
+                        reason=(
+                            "C6 completed with an empty review batch; "
+                            "ready for deterministic C7"
+                        ),
+                    )
+                    return CreativeRunOutcome(
+                        status="completed",
+                        run_dir=self.run_dir,
+                        primary_artifact=self._artifact_path(batch_ref),
+                        next_command=None,
+                    )
+
+                self.hub.set_run_status("running", stage=stage)
+                evidence_revisions = await self._run_c6a(
+                    hook_passed,
+                    challenge_ref=prefix.challenge_brief_ref,
+                    constraint_ref=prefix.constraint_view_ref,
+                    brief_ref=prefix.creative_brief_ref,
+                )
+
+                stage = C6B_PORTFOLIO_CURATE
+                self.hub.set_run_status("running", stage=stage)
+                shortlist, curator_refs, curator_task_ids = await self._run_c6b(
+                    evidence_revisions
+                )
+                if not shortlist:
+                    batch_ref, _ = self._publish_review_batch(
+                        concept_refs=(),
+                        skip_reason="shortlist_empty",
+                        source_refs=curator_refs,
+                    )
+                    self.hub.set_wait(None)
+                    self.hub.set_run_status(
+                        "running",
+                        stage=INTERNAL_C6_EMPTY_COMPLETE_STAGE,
+                        reason=(
+                            "C6 shortlist is empty; ready for deterministic C7"
+                        ),
+                    )
+                    return CreativeRunOutcome(
+                        status="completed",
+                        run_dir=self.run_dir,
+                        primary_artifact=self._artifact_path(batch_ref),
+                        next_command=None,
+                    )
+
+                batch_ref, batch = self._publish_review_batch(
+                    concept_refs=tuple(
+                        concept.artifact_ref for concept in shortlist
+                    ),
+                    skip_reason=None,
+                    source_refs=curator_refs,
+                )
+                batch_record = _artifact_record(self.hub, batch_ref)
+                review_round = ReviewRound.open(batch)
+                wait = {
+                    "kind": "creative_human_review",
+                    "round_id": review_round.round_id,
+                    "round_artifact_id": batch_ref,
+                    "round_sha256": review_round.round_sha256,
+                    "batch_sha256": batch.batch_sha256,
+                    "batch_artifact_sha256": batch_record["sha256"],
+                    "status": "open",
+                    "opened_at": batch_record["created_at"],
+                    "closed_at": None,
+                    "resolution_id": None,
+                    "resolution_sha256": None,
+                    "latest_receipt_set_sha256": None,
+                    "approved_feedback": [],
+                }
+                self.hub.set_wait(wait)
+                self.hub.set_run_status(
+                    "waiting",
+                    stage=CREATIVE_HUMAN_REVIEW_STAGE,
+                    reason=(
+                        "immutable C6 review batch is ready; "
+                        f"curator tasks: {', '.join(curator_task_ids)}"
+                    ),
+                )
+                return CreativeRunOutcome(
+                    status="waiting",
+                    run_dir=self.run_dir,
+                    primary_artifact=self._artifact_path(batch_ref),
+                    next_command=f"hacksome review {self.run_dir}",
+                )
+        except TimeoutError as exc:
+            self.hub.set_run_status("failed", stage=stage, error=exc)
+            raise CreativeWorkflowError(
+                "Creative C6 workflow exceeded run timeout"
+            ) from exc
+        except Exception as exc:
+            task_id = (
+                exc.task_id
+                if isinstance(exc, AgentTaskExecutionError)
+                else None
+            )
+            self.hub.set_run_status(
+                "failed",
+                stage=stage,
+                error=exc,
+                task_id=task_id,
+            )
+            if isinstance(exc, CreativeWorkflowError):
+                raise
+            raise CreativeWorkflowError(str(exc)) from exc
+
+    async def resume(self) -> Any:
+        """Consume one closed C6 resolution and hand its Final Ideas to C7.
+
+        The import is local so the feedback finalizer can use the workflow's
+        already-frozen executor without creating an import cycle.
+        """
+
+        from hacksome.creative.finalize import CreativeFeedbackFinalizer
+
+        return await CreativeFeedbackFinalizer(self).resume()
+
+    async def _run_c6a(
+        self,
+        concepts: Sequence[CreativeConcept],
+        *,
+        challenge_ref: str,
+        constraint_ref: str,
+        brief_ref: str,
+    ) -> tuple[CreativeConcept, ...]:
+        """Publish exactly one evidence-informed successor per C4-pass Concept."""
+
+        async def revise(concept: CreativeConcept) -> CreativeConcept:
+            budget = self._revision_budget(concept.concept_id)
+            revised_budget = budget.consume(
+                RevisionReason.EVIDENCE_INFORMED,
+                settings=self.settings,
+            )
+            revised_budget.require_evidence_revision()
+            hook_disposition = self._c4_pass_disposition(concept.artifact_ref)
+            evidence_refs = tuple(
+                _required_string_sequence(
+                    hook_disposition,
+                    "evidence_refs",
+                )
+            )
+            novelty_ref = self._novelty_ref_for(concept.artifact_ref)
+            relevant_cues, cue_source_ref = self._relevant_memory_cues(concept)
+            task_id = (
+                f"creative-c6a-evidence-{concept.concept_id}-"
+                f"r{concept.revision:03d}"
+            )
+            parent_refs = (
+                challenge_ref,
+                constraint_ref,
+                brief_ref,
+                concept.artifact_ref,
+                *evidence_refs,
+                novelty_ref,
+                *((cue_source_ref,) if cue_source_ref is not None else ()),
+            )
+            output = await self._execute(
+                stage=C6A_EVIDENCE_REVISE,
+                task_id=task_id,
+                blocks=(
+                    (
+                        "CHALLENGE_BRIEF",
+                        self.hub.read_artifact(challenge_ref),
+                    ),
+                    (
+                        "CONSTRAINT_VIEW",
+                        self.hub.read_artifact(constraint_ref),
+                    ),
+                    ("CREATIVE_BRIEF", self.hub.read_artifact(brief_ref)),
+                    (
+                        "CONCEPT_REVISION",
+                        self.hub.read_artifact(concept.artifact_ref),
+                    ),
+                    (
+                        "CHEAP_HOOK_EVIDENCE",
+                        _artifact_json_index(self.hub, evidence_refs),
+                    ),
+                    (
+                        "NOVELTY_SCAN",
+                        self.hub.read_artifact(novelty_ref),
+                    ),
+                    (
+                        "RELEVANT_MEMORY_CUES",
+                        _json_text({"cues": relevant_cues}),
+                    ),
+                ),
+                parent_refs=parent_refs,
+            )
+            output = self._validate_completed_output(
+                task_id=task_id,
+                stage=C6A_EVIDENCE_REVISE,
+                output=output,
+                context={
+                    "source_markdown": self.hub.read_artifact(
+                        concept.artifact_ref
+                    )
+                },
+            )
+            artifact_ref = concept_revision_ref(
+                concept.concept_id,
+                concept.revision + 1,
+            )
+            self.hub.publish_artifact(
+                artifact_id=artifact_ref,
+                artifact_type="creative_concept",
+                relative_path=(
+                    f"artifacts/creative/concepts/{artifact_ref}.md"
+                ),
+                content=_required_text(output, "markdown"),
+                task_id=task_id,
+                source_refs=parent_refs,
+                metadata={
+                    "concept_id": concept.concept_id,
+                    "origin": concept.origin,
+                    "revision": concept.revision + 1,
+                    "revision_reason": "evidence_informed",
+                    "supersedes_ref": concept.artifact_ref,
+                    "primary_territory_ref": concept.primary_territory_ref,
+                    "parent_atom_refs": list(concept.parent_atom_refs),
+                    "memory_cue_refs": list(concept.memory_cue_refs),
+                    "memory_source_refs": [
+                        reference.to_dict()
+                        for reference in concept.memory_source_refs
+                    ],
+                    "hook_disposition_ref": str(
+                        hook_disposition["disposition_id"]
+                    ),
+                    "novelty_scan_ref": novelty_ref,
+                    "relevant_memory_cue_ids": [
+                        str(cue["cue_id"])
+                        for cue in relevant_cues
+                        if isinstance(cue.get("cue_id"), str)
+                    ],
+                },
+            )
+            decision_id = (
+                f"creative-decision-c6a-{concept.concept_id}-"
+                f"r{concept.revision:03d}"
+            )
+            self.hub.append_decision(
+                {
+                    "decision_id": decision_id,
+                    "route_id": "creative",
+                    "stage": "creative-evidence-revision",
+                    "decision_type": "revision_successor",
+                    "outcome": "superseded_by_evidence_revision",
+                    "reason_codes": ["c6_evidence_revision_published"],
+                    "subject_refs": [concept.artifact_ref],
+                    "evidence_refs": [
+                        *evidence_refs,
+                        novelty_ref,
+                        *(
+                            (cue_source_ref,)
+                            if cue_source_ref is not None
+                            else ()
+                        ),
+                    ],
+                    "task_ids": [task_id],
+                    "metadata": {"target_ref": artifact_ref},
+                }
+            )
+            self._publish_disposition(
+                concept,
+                stage="C6A",
+                outcome="superseded_by_evidence_revision",
+                terminal=True,
+                target_ref=artifact_ref,
+                reason_codes=("c6_evidence_revision_published",),
+                decision_ref=decision_id,
+                evidence_refs=(
+                    *evidence_refs,
+                    novelty_ref,
+                    *(
+                        (cue_source_ref,)
+                        if cue_source_ref is not None
+                        else ()
+                    ),
+                ),
+                task_ids=(task_id,),
+                suffix="evidence-superseded",
+            )
+            return CreativeConcept(
+                concept_id=concept.concept_id,
+                revision=concept.revision + 1,
+                artifact_ref=artifact_ref,
+                primary_territory_ref=concept.primary_territory_ref,
+                parent_atom_refs=concept.parent_atom_refs,
+                origin=concept.origin,
+                task_id=task_id,
+                memory_cue_refs=concept.memory_cue_refs,
+                memory_source_refs=concept.memory_source_refs,
+            )
+
+        revised = await asyncio.gather(*(revise(concept) for concept in concepts))
+        return tuple(sorted(revised, key=lambda item: item.artifact_ref))
+
+    async def _run_c6b(
+        self,
+        concepts: Sequence[CreativeConcept],
+    ) -> tuple[
+        tuple[CreativeConcept, ...],
+        tuple[str, ...],
+        tuple[str, ...],
+    ]:
+        """Collect two fresh categorical curator views and shortlist in code."""
+
+        allowed_refs = {concept.artifact_ref for concept in concepts}
+        portfolio = _curation_portfolio_text(self.hub, concepts)
+
+        async def curate(slot: int) -> tuple[int, dict[str, Any], str, str]:
+            task_id = f"creative-c6b-portfolio-curator-{slot:02d}"
+            output = await self._execute(
+                stage=C6B_PORTFOLIO_CURATE,
+                task_id=task_id,
+                blocks=(
+                    ("EVIDENCE_INFORMED_PORTFOLIO", portfolio),
+                    (
+                        "CURATION_CONTRACT",
+                        (
+                            "Classify every exact Concept ref once as "
+                            "include, hold, or exclude. Do not score, rank, "
+                            "merge, or emit primary Territory."
+                        ),
+                    ),
+                ),
+                parent_refs=tuple(
+                    concept.artifact_ref for concept in concepts
+                ),
+            )
+            output = self._validate_completed_output(
+                task_id=task_id,
+                stage=C6B_PORTFOLIO_CURATE,
+                output=output,
+                context={"allowed_concept_refs": allowed_refs},
+            )
+            artifact_ref = (
+                f"creative-portfolio-curation-r001-v{slot:02d}"
+            )
+            self.hub.publish_artifact(
+                artifact_id=artifact_ref,
+                artifact_type="creative_portfolio_curation",
+                relative_path=(
+                    "artifacts/creative/curation/"
+                    f"{artifact_ref}.json"
+                ),
+                content=_json_text(output),
+                task_id=task_id,
+                source_refs=tuple(
+                    concept.artifact_ref for concept in concepts
+                ),
+                metadata={
+                    "curator_slot": slot,
+                    "concept_refs": sorted(allowed_refs),
+                },
+            )
+            return slot, output, task_id, artifact_ref
+
+        completed = tuple(
+            sorted(
+                await asyncio.gather(
+                    *(
+                        curate(slot)
+                        for slot in range(
+                            1,
+                            int(self.settings.portfolio_curators) + 1,
+                        )
+                    )
+                )
+            )
+        )
+        classification_by_ref: dict[str, list[str]] = {
+            reference: [] for reference in allowed_refs
+        }
+        for _, output, _, _ in completed:
+            for row in _object_list(output, "classifications"):
+                classification_by_ref[
+                    _required_text(row, "concept_ref")
+                ].append(_required_text(row, "decision"))
+        shortlist, reason_by_ref = _deterministic_shortlist(
+            concepts,
+            classification_by_ref,
+            limit=int(self.settings.max_human_shortlist),
+        )
+        curator_refs = tuple(row[3] for row in completed)
+        curator_task_ids = tuple(row[2] for row in completed)
+        decision_id = "creative-decision-c6b-shortlist-r001"
+        self.hub.append_decision(
+            {
+                "decision_id": decision_id,
+                "route_id": "creative",
+                "stage": "creative-portfolio-curation",
+                "decision_type": "portfolio_shortlist",
+                "outcome": (
+                    "shortlist_published" if shortlist else "shortlist_empty"
+                ),
+                "reason_codes": sorted(set(reason_by_ref.values())),
+                "subject_refs": sorted(allowed_refs),
+                "evidence_refs": list(curator_refs),
+                "task_ids": list(curator_task_ids),
+                "metadata": {
+                    "shortlist_refs": [
+                        concept.artifact_ref for concept in shortlist
+                    ],
+                    "classifications": classification_by_ref,
+                },
+            }
+        )
+        selected_refs = {concept.artifact_ref for concept in shortlist}
+        for concept in concepts:
+            selected = concept.artifact_ref in selected_refs
+            reason = (
+                "c6_shortlisted"
+                if selected
+                else reason_by_ref[concept.artifact_ref]
+            )
+            self._publish_disposition(
+                concept,
+                stage="C6B",
+                outcome="shortlisted" if selected else "not_shortlisted",
+                terminal=not selected,
+                reason_codes=(reason,),
+                decision_ref=decision_id,
+                evidence_refs=curator_refs,
+                task_ids=curator_task_ids,
+                suffix="shortlisted" if selected else "not-shortlisted",
+            )
+        return shortlist, curator_refs, curator_task_ids
+
+    def _publish_review_batch(
+        self,
+        *,
+        concept_refs: Sequence[str],
+        skip_reason: str | None,
+        source_refs: Sequence[str] = (),
+    ) -> tuple[str, ReviewBatch]:
+        if skip_reason not in {
+            None,
+            "no_concepts_generated",
+            "all_candidates_failed_hook",
+            "shortlist_empty",
+        }:
+            raise CreativeWorkflowError(
+                f"unsupported empty review reason: {skip_reason}"
+            )
+        batch = ReviewBatch.build(
+            run_id=self.hub.run_id,
+            concepts=tuple(
+                ConceptBinding(
+                    concept_ref=reference,
+                    concept_sha256=str(
+                        _artifact_record(self.hub, reference)["sha256"]
+                    ),
+                )
+                for reference in concept_refs
+            ),
+            skip_reason=skip_reason,
+        )
+        artifact_ref = self.hub.publish_artifact(
+            artifact_id="creative-review-batch-r001",
+            artifact_type="creative_human_review_batch",
+            relative_path=(
+                "artifacts/creative/curation/"
+                "creative-review-batch-r001.json"
+            ),
+            content=_json_text(batch.to_dict()),
+            task_id=None,
+            source_refs=(*source_refs, *concept_refs),
+            metadata={
+                "status": batch.status,
+                "concept_refs": list(batch.concept_refs),
+                "batch_sha256": batch.batch_sha256,
+                "skip_reason": skip_reason,
+            },
+        )
+        return artifact_ref, batch
+
+    def _concept_from_artifact(self, reference: str) -> CreativeConcept:
+        record = _artifact_record(self.hub, reference)
+        if record.get("artifact_type") != "creative_concept":
+            raise CreativeWorkflowError(
+                f"C6 source is not a Creative Concept: {reference}"
+            )
+        metadata = _artifact_metadata(self.hub, reference)
+        raw_memory_refs = metadata.get("memory_source_refs", [])
+        if not isinstance(raw_memory_refs, list):
+            raise CreativeWorkflowError(
+                f"Concept has invalid memory_source_refs: {reference}"
+            )
+        return CreativeConcept(
+            concept_id=_required_text(metadata, "concept_id"),
+            revision=_required_integer(metadata, "revision"),
+            artifact_ref=reference,
+            primary_territory_ref=_required_text(
+                metadata,
+                "primary_territory_ref",
+            ),
+            parent_atom_refs=tuple(
+                _required_string_sequence(metadata, "parent_atom_refs")
+            ),
+            origin=_required_text(metadata, "origin"),
+            task_id=str(record.get("task_id") or ""),
+            memory_cue_refs=tuple(
+                _required_string_sequence(
+                    metadata,
+                    "memory_cue_refs",
+                    required=False,
+                )
+            ),
+            memory_source_refs=tuple(
+                MemoryCapsuleRef.from_mapping(item)
+                for item in raw_memory_refs
+            ),
+        )
+
+    def _revision_budget(self, concept_id: str) -> RevisionBudget:
+        state = self.hub.load_state()
+        artifacts = state.get("artifacts")
+        if not isinstance(artifacts, dict):
+            raise CreativeWorkflowError("run artifacts must be an object")
+        reasons = [
+            _metadata_value(record, "revision_reason")
+            for record in artifacts.values()
+            if isinstance(record, dict)
+            and record.get("artifact_type") == "creative_concept"
+            and _metadata_value(record, "concept_id") == concept_id
+        ]
+        return RevisionBudget(
+            hook_repairs=reasons.count("cheap_hook_repair"),
+            evidence_revisions=reasons.count("evidence_informed"),
+            feedback_revisions=reasons.count("human_feedback"),
+        )
+
+    def _c4_pass_disposition(
+        self,
+        concept_ref: str,
+    ) -> dict[str, Any]:
+        state = self.hub.load_state()
+        artifacts = state.get("artifacts")
+        if not isinstance(artifacts, dict):
+            raise CreativeWorkflowError("run artifacts must be an object")
+        matches: list[dict[str, Any]] = []
+        for artifact_id, record in sorted(artifacts.items()):
+            if (
+                not isinstance(record, dict)
+                or record.get("artifact_type")
+                != "creative_concept_disposition"
+            ):
+                continue
+            raw = json.loads(self.hub.read_artifact(str(artifact_id)))
+            if (
+                isinstance(raw, dict)
+                and raw.get("stage") == "C4"
+                and raw.get("outcome") == "pass"
+                and raw.get("concept_revision_ref") == concept_ref
+            ):
+                matches.append(raw)
+        if len(matches) != 1:
+            raise CreativeWorkflowError(
+                f"{concept_ref} requires exactly one C4 pass disposition"
+            )
+        return matches[0]
+
+    def _novelty_ref_for(self, concept_ref: str) -> str:
+        state = self.hub.load_state()
+        artifacts = state.get("artifacts")
+        if not isinstance(artifacts, dict):
+            raise CreativeWorkflowError("run artifacts must be an object")
+        matches = [
+            str(artifact_id)
+            for artifact_id, record in artifacts.items()
+            if isinstance(record, dict)
+            and record.get("artifact_type") == "creative_novelty_scan"
+            and record.get("source_refs") == [concept_ref]
+        ]
+        if len(matches) != 1:
+            raise CreativeWorkflowError(
+                f"{concept_ref} requires exactly one Novelty Scan"
+            )
+        return matches[0]
+
+    def _relevant_memory_cues(
+        self,
+        concept: CreativeConcept,
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        state = self.hub.load_state()
+        artifacts = state.get("artifacts")
+        if not isinstance(artifacts, dict):
+            raise CreativeWorkflowError("run artifacts must be an object")
+        packets = [
+            str(artifact_id)
+            for artifact_id, record in artifacts.items()
+            if isinstance(record, dict)
+            and record.get("artifact_type")
+            == "creative_memory_inspiration_packet"
+        ]
+        if not packets:
+            return [], None
+        if len(packets) != 1:
+            raise CreativeWorkflowError(
+                "C6A requires at most one Memory Inspiration Packet"
+            )
+        raw = json.loads(self.hub.read_artifact(packets[0]))
+        if not isinstance(raw, dict):
+            raise CreativeWorkflowError(
+                "Memory Inspiration Packet must be an object"
+            )
+        cues = _object_list(raw, "cues")
+        relevant = [
+            cue
+            for cue in cues
+            if (
+                cue.get("cue_id") in concept.memory_cue_refs
+                or concept.artifact_ref
+                in _optional_string_sequence(cue.get("related_concept_refs"))
+                or bool(
+                    set(concept.parent_atom_refs).intersection(
+                        _optional_string_sequence(
+                            cue.get("current_atom_refs")
+                        )
+                    )
+                )
+            )
+        ]
+        return relevant, packets[0]
+
+    def _artifact_path(self, artifact_ref: str) -> Path:
+        relative = _artifact_record(self.hub, artifact_ref).get("path")
+        if not isinstance(relative, str):
+            raise CreativeWorkflowError(
+                f"artifact has no path: {artifact_ref}"
+            )
+        return self.run_dir.joinpath(*Path(relative).parts)
 
     def _verify_execution_inputs(self) -> None:
         """Fail closed if run-local resources changed after run creation."""
@@ -1086,6 +1779,7 @@ class CreativeIdeaWorkflow:
         self,
         concept: CreativeConcept,
         *,
+        stage: str = "C4",
         outcome: str,
         terminal: bool,
         reason_codes: Sequence[str],
@@ -1104,7 +1798,7 @@ class CreativeIdeaWorkflow:
             "disposition_id": disposition_id,
             "concept_revision_ref": concept.artifact_ref,
             "concept_sha256": artifact_record["sha256"],
-            "stage": "C4",
+            "stage": stage,
             "outcome": outcome,
             "terminal": terminal,
             "target_ref": target_ref,
@@ -1679,6 +2373,43 @@ def _required_text(value: Mapping[str, Any], key: str) -> str:
     return result
 
 
+def _required_integer(value: Mapping[str, Any], key: str) -> int:
+    result = value.get(key)
+    if isinstance(result, bool) or not isinstance(result, int) or result < 1:
+        raise CreativeWorkflowError(f"output requires positive integer {key}")
+    return result
+
+
+def _required_string_sequence(
+    value: Mapping[str, Any],
+    key: str,
+    *,
+    required: bool = True,
+) -> list[str]:
+    result = value.get(key)
+    if result is None and not required:
+        return []
+    if (
+        not isinstance(result, list)
+        or (required and not result)
+        or any(not isinstance(item, str) or not item for item in result)
+        or len(result) != len(set(result))
+    ):
+        qualifier = "non-empty " if required else ""
+        raise CreativeWorkflowError(
+            f"output {key} must be a unique {qualifier}array of strings"
+        )
+    return result
+
+
+def _optional_string_sequence(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(
+        item for item in value if isinstance(item, str) and item
+    )
+
+
 def _positive_timeout(value: object, name: str) -> float:
     if (
         isinstance(value, bool)
@@ -1732,10 +2463,162 @@ def _artifact_metadata(hub: RunHub, artifact_ref: str) -> dict[str, Any]:
     return metadata
 
 
+def _metadata_value(record: Mapping[str, Any], key: str) -> Any:
+    metadata = record.get("metadata")
+    return metadata.get(key) if isinstance(metadata, dict) else None
+
+
 def _artifact_index(hub: RunHub, artifact_refs: Sequence[str]) -> str:
     return "\n\n".join(
         f"## {ref}\n\n{hub.read_artifact(ref)}" for ref in artifact_refs
     )
+
+
+def _artifact_json_index(hub: RunHub, artifact_refs: Sequence[str]) -> str:
+    rows: list[dict[str, Any]] = []
+    for reference in artifact_refs:
+        raw = json.loads(hub.read_artifact(reference))
+        if not isinstance(raw, dict):
+            raise CreativeWorkflowError(
+                f"JSON artifact must contain an object: {reference}"
+            )
+        rows.append({"artifact_ref": reference, "payload": raw})
+    return _json_text({"artifacts": rows})
+
+
+def _curation_portfolio_text(
+    hub: RunHub,
+    concepts: Sequence[CreativeConcept],
+) -> str:
+    """Render C6B evidence without exposing controller Territory allocation."""
+
+    rows: list[dict[str, Any]] = []
+    for concept in concepts:
+        metadata = _artifact_metadata(hub, concept.artifact_ref)
+        novelty_ref = metadata.get("novelty_scan_ref")
+        hook_ref = metadata.get("hook_disposition_ref")
+        if not isinstance(novelty_ref, str) or not isinstance(hook_ref, str):
+            raise CreativeWorkflowError(
+                f"C6A Concept is missing evidence refs: {concept.artifact_ref}"
+            )
+        rows.append(
+            {
+                "concept_ref": concept.artifact_ref,
+                "concept_markdown": hub.read_artifact(concept.artifact_ref),
+                "hook_disposition": json.loads(hub.read_artifact(hook_ref)),
+                "novelty_scan": hub.read_artifact(novelty_ref),
+                "relevant_memory_cue_ids": metadata.get(
+                    "relevant_memory_cue_ids",
+                    [],
+                ),
+            }
+        )
+    return _json_text({"concepts": rows})
+
+
+def _deterministic_shortlist(
+    concepts: Sequence[CreativeConcept],
+    classification_by_ref: Mapping[str, Sequence[str]],
+    *,
+    limit: int,
+) -> tuple[tuple[CreativeConcept, ...], dict[str, str]]:
+    """Apply approval tiers followed by stable Territory round-robin.
+
+    Capacity losses in the tier that fills the portfolio are labelled as a
+    Territory round-robin trade-off.  Candidates in later approval tiers are
+    labelled as general portfolio capacity losses.
+    """
+
+    if limit < 1:
+        raise CreativeWorkflowError("human shortlist limit must be positive")
+    by_ref = {concept.artifact_ref: concept for concept in concepts}
+    if set(by_ref) != set(classification_by_ref):
+        raise CreativeWorkflowError(
+            "curator classifications must match the C6A pool exactly"
+        )
+    tiers: dict[int, list[CreativeConcept]] = {0: [], 1: [], 2: []}
+    reasons: dict[str, str] = {}
+    for reference in sorted(by_ref):
+        votes = tuple(classification_by_ref[reference])
+        if (
+            len(votes) != 2
+            or any(vote not in {"include", "hold", "exclude"} for vote in votes)
+        ):
+            raise CreativeWorkflowError(
+                f"{reference} requires two valid curator classifications"
+            )
+        include_count = votes.count("include")
+        hold_count = votes.count("hold")
+        if include_count == 2:
+            tiers[0].append(by_ref[reference])
+        elif include_count == 1 and hold_count == 1:
+            tiers[1].append(by_ref[reference])
+        elif include_count == 1:
+            tiers[2].append(by_ref[reference])
+        elif votes == ("exclude", "exclude"):
+            reasons[reference] = "curators_both_exclude"
+        else:
+            reasons[reference] = "insufficient_include_support"
+
+    selected: list[CreativeConcept] = []
+    capacity_tier: int | None = None
+    for tier in range(3):
+        candidates = tiers[tier]
+        if not candidates:
+            continue
+        ordered = _territory_round_robin(
+            candidates,
+            covered={
+                concept.primary_territory_ref for concept in selected
+            },
+        )
+        remaining = limit - len(selected)
+        if remaining <= 0:
+            for concept in ordered:
+                reasons[concept.artifact_ref] = "portfolio_capacity"
+            continue
+        selected.extend(ordered[:remaining])
+        overflow = ordered[remaining:]
+        if overflow:
+            capacity_tier = tier
+            for concept in overflow:
+                reasons[concept.artifact_ref] = (
+                    "territory_round_robin_capacity"
+                )
+        if len(selected) == limit:
+            for later_tier in range(tier + 1, 3):
+                for concept in tiers[later_tier]:
+                    reasons[concept.artifact_ref] = "portfolio_capacity"
+            break
+    del capacity_tier
+    return tuple(selected), reasons
+
+
+def _territory_round_robin(
+    concepts: Sequence[CreativeConcept],
+    *,
+    covered: set[str],
+) -> tuple[CreativeConcept, ...]:
+    groups: dict[str, list[CreativeConcept]] = {}
+    for concept in sorted(concepts, key=lambda item: item.artifact_ref):
+        groups.setdefault(concept.primary_territory_ref, []).append(concept)
+    territory_order = (
+        sorted(reference for reference in groups if reference not in covered)
+        + sorted(reference for reference in groups if reference in covered)
+    )
+    result: list[CreativeConcept] = []
+    while groups:
+        for territory in tuple(territory_order):
+            group = groups.get(territory)
+            if not group:
+                continue
+            result.append(group.pop(0))
+            if not group:
+                del groups[territory]
+        territory_order = [
+            territory for territory in territory_order if territory in groups
+        ]
+    return tuple(result)
 
 
 def _concept_disposition_index(

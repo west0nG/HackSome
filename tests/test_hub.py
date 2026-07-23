@@ -182,6 +182,79 @@ class RunHubTests(unittest.TestCase):
                     }
                 )
 
+    def test_wait_and_resolution_share_one_recoverable_commit_boundary(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            hub = self.create_hub(Path(directory), route="creative")
+            open_wait = {
+                "kind": "creative_human_review",
+                "round_id": "creative-review-round-001",
+                "status": "open",
+            }
+            closed_wait = {
+                **open_wait,
+                "status": "closed",
+                "resolution_id": "resolution-001",
+            }
+            resolution = {
+                "resolution_id": "resolution-001",
+                "round_id": "creative-review-round-001",
+                "resolution_sha256": "a" * 64,
+            }
+            hub.set_wait(open_wait)
+
+            with patch(
+                "hacksome.hub.append_jsonl",
+                side_effect=OSError("resolution append crash"),
+            ):
+                with self.assertRaisesRegex(
+                    OSError, "resolution append crash"
+                ):
+                    hub.set_wait_and_append_ledger_record(
+                        closed_wait,
+                        ledger="human_resolutions",
+                        record=resolution,
+                    )
+
+            raw = hub.load_raw_state()
+            self.assertEqual(raw["wait"], closed_wait)
+            self.assertEqual(len(raw["pending_records"]), 1)
+            self.assertEqual(
+                raw["pending_records"][0]["record"]["resolution_id"],
+                "resolution-001",
+            )
+            self.assertEqual(
+                read_jsonl(hub.run_dir / "human-resolutions.jsonl"),
+                [],
+            )
+
+            self.assertEqual(hub.reconcile_pending(), 1)
+            first = read_jsonl(
+                hub.run_dir / "human-resolutions.jsonl"
+            )[0]
+            self.assertEqual(first["resolution_id"], "resolution-001")
+            self.assertFalse(
+                hub.set_wait_and_append_ledger_record(
+                    closed_wait,
+                    ledger="human_resolutions",
+                    record=resolution,
+                )
+            )
+            self.assertEqual(
+                read_jsonl(hub.run_dir / "human-resolutions.jsonl"),
+                [first],
+            )
+            with self.assertRaises(StateConflictError):
+                hub.set_wait_and_append_ledger_record(
+                    closed_wait,
+                    ledger="human_resolutions",
+                    record={
+                        **resolution,
+                        "resolution_sha256": "b" * 64,
+                    },
+                )
+
     def test_artifact_publish_idempotency_adoption_and_conflicts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             hub = self.create_hub(Path(directory))

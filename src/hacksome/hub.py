@@ -483,6 +483,68 @@ class RunHub:
 
         self._mutate(update)
 
+    def set_wait_and_append_ledger_record(
+        self,
+        wait: Mapping[str, Any],
+        *,
+        ledger: str,
+        record: Mapping[str, Any],
+    ) -> bool:
+        """Atomically persist wait state with one durable ledger record.
+
+        The run snapshot is written with the exact ledger row in its outbox
+        before the JSONL append is attempted.  A crash during that append leaves
+        the wait transition and pending row together for ``reconcile``.
+        """
+
+        if ledger not in _LEDGERS:
+            raise ValueError(f"unsupported outbox ledger: {ledger}")
+        normalized_wait = normalize_json(dict(wait), label="wait state")
+        if not isinstance(normalized_wait, dict):
+            raise StateError("wait state must be an object")
+        _, id_field = _LEDGERS[ledger]
+        normalized_record = normalize_json(
+            dict(record), label=f"{ledger} record"
+        )
+        if not isinstance(normalized_record, dict):
+            raise StateError(f"{ledger} record must be an object")
+        record_id = normalized_record.get(id_field)
+        if not isinstance(record_id, str) or not record_id:
+            raise StateError(
+                f"{ledger} record requires non-empty {id_field!r}"
+            )
+
+        with self._exclusive_lease():
+            state = self._prepare_writer_state()
+            existing = self._find_ledger_record(
+                ledger, record_id, state
+            )
+            created = existing is None
+            pending_records: list[Mapping[str, Any]] = []
+            if existing is not None:
+                comparable = (
+                    existing
+                    if "created_at" in normalized_record
+                    else {
+                        key: value
+                        for key, value in existing.items()
+                        if key != "created_at"
+                    }
+                )
+                if comparable != normalized_record:
+                    raise StateConflictError(
+                        f"{id_field} {record_id!r} already has "
+                        "different content"
+                    )
+            else:
+                normalized_record.setdefault("created_at", utc_now())
+                pending_records.append(
+                    self._pending(ledger, normalized_record)
+                )
+            state["wait"] = normalized_wait
+            self._commit_locked(state, pending_records)
+        return created
+
     def set_result_artifacts(self, artifact_ids: Sequence[str]) -> None:
         values = list(artifact_ids)
         if any(not isinstance(value, str) or not _SAFE_ID.fullmatch(value) for value in values):
