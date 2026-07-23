@@ -7,6 +7,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
+from hacksome.creative.prompting import creative_prompt_catalog
 from hacksome.prompting import (
     PromptCatalog,
     PromptRenderError,
@@ -20,6 +21,25 @@ from hacksome.prompting import (
 
 
 class PromptingTests(unittest.TestCase):
+    def test_creative_c2_prompt_forbids_collapsed_atom_sections(self) -> None:
+        template = creative_prompt_catalog[
+            "creative-territory-explore"
+        ].template_path.read_text(encoding="utf-8")
+
+        self.assertIn("Use those eight H2 headings verbatim", template)
+        self.assertIn("Do not\ncompress them into one section", template)
+        for heading in (
+            "Territory",
+            "Trigger",
+            "Audience Action",
+            "Mechanism",
+            "Transformation",
+            "Reveal",
+            "Aftertaste",
+            "Challenge Fit and Risks",
+        ):
+            self.assertEqual(template.count(f"## {heading}\n"), 1)
+
     def test_useful_catalog_preserves_order_versions_schemas_and_web_policy(
         self,
     ) -> None:

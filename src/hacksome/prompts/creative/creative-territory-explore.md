@@ -21,6 +21,46 @@ H2 for:
 - `Aftertaste`
 - `Challenge Fit and Risks`
 
+Use those eight H2 headings verbatim and in that order for every Atom. Do not
+compress them into one section, bold inline labels, list keys, or prose
+sentences. Follow this exact shape:
+
+```markdown
+# <Atom title>
+
+## Territory
+
+<natural-language mechanism space>
+
+## Trigger
+
+<trigger>
+
+## Audience Action
+
+<audience action>
+
+## Mechanism
+
+<explainable mechanism>
+
+## Transformation
+
+<transformation>
+
+## Reveal
+
+<reveal>
+
+## Aftertaste
+
+<aftertaste>
+
+## Challenge Fit and Risks
+
+<fit and risks>
+```
+
 An Atom must describe an audience action and an explainable mechanism. A new
 name, visual skin, marketing phrase, or unexplained “AI surprise” is not a new
 Atom. Do not browse the web or inspect run history.
