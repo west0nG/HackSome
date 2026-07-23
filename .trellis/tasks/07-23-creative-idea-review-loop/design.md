@@ -1309,7 +1309,12 @@ Record 不含 reviewer/curator 身份、原始人类评论、curator instruction
 }
 ```
 
-这只建立稳定边界。Build Review Gate 仍可以选零张卡，也不能把未选择解释为 Creative 质量 reject。
+这只建立稳定边界。两个 Markdown 字段有意对齐 BuildFactory
+`TeamLayout.bootstrap()`，但当前任务不实现 consumer 或启动 Team。未来
+Build-side adapter 必须复核 `idea_card_sha256`，并以至少
+`source_run_id + idea_card_id + idea_card_sha256` 生成跨 run 身份，不能只使用
+会重复的 card ID。Build Review Gate 仍可以选零张卡，也不能把未选择解释为
+Creative 质量 reject。
 
 ## 10. 决策与人工反馈 Ledger
 
@@ -1669,13 +1674,19 @@ route-specific 参数由 CLI 在 dispatch 后校验。Creative 不读取 `--max-
 hacksome review RUN_DIR
 hacksome resume RUN_DIR
 hacksome reconcile RUN_DIR
-hacksome benchmark --route creative MANIFEST.json --mode live|fixture
+hacksome benchmark --route creative MANIFEST.json
 hacksome benchmark --continue BENCH_DIR
 ```
 
 Creative `status` 输出 route、review round、覆盖和是否可 resume。Useful 的 human-readable 与 `--json` 输出保持当前字节/字段合同，不追加 route 行；route dispatch 在内部完成。实现使用迁移前 golden fixture 验证，而不只是比较“默认 Useful”和“显式 Useful”两个新调用。
 
 `validate` 先做 Hub core validation，再做 route contract validation。
+
+Benchmark 的 `live|fixture` 是 manifest 内的 `mode` 字段，不是 CLI `--mode`
+参数。当前 Draft PR 的 CLI 只实现 manifest 规划校验；`--continue` 只校验
+既有 bundle/worksheet 后 fail closed，不持久化或推进 arm。下文 controller、
+持久化和 live/fixture 执行描述是后续实现合同，不能在 controller 接通前作为
+已交付能力对外宣称。
 
 ## 14. Benchmark 设计
 

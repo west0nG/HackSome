@@ -10,6 +10,28 @@
 - 每个切片结束都同步并检查 `origin/main`；如果同一文件有上游改动，先停下来比较语义，不盲目覆盖。
 - 默认测试全部离线；在线 Codex/联网 benchmark 只在 Percy 提供题目并显式要求后运行。
 
+### 0.1 当前实施快照（2026-07-23）
+
+以下快照记录实际完成度；下方原子清单继续作为验收合同，不用机械勾选掩盖
+尚未执行的门禁。
+
+- 已完成并分段提交：route-aware Harness、Creative C0–C5（含 Idea Memory）、
+  C6 人工策展、C7 确定性报告与可重放 finalization、离线 benchmark 合同。
+- 已接通 CLI：`run --route creative`、`status`、`review`、`resume` 与
+  plan-only `benchmark`；Useful 默认行为和输出仍有回归测试。
+- 已把“空 C6 batch”接到 C7：没有可评审 Concept 时不进入人工等待，但
+  Candidate Fate Ledger、稳定淘汰原因、Zero-Idea Explanation 与 Memory
+  Record 仍然生成，供后续 Agent 检索“启发”和“应避免模式”。
+- benchmark 当前只完成严格 manifest、共享 Memory Snapshot、盲化 A/B、
+  worksheet 与离线 evaluator 合同；没有实现在线 arm execution controller，
+  CLI 会明确拒绝伪装成已执行或已恢复。
+- 待完成门禁：全量离线测试、最终 Useful smoke、wheel/resource 检查、
+  `origin/main` 最终同步、Draft PR。当前沙箱禁止绑定 loopback socket，
+  因此 HTTP 单测需在不可绑定时明确 skip，真实浏览器/LAN QA 记录为未执行，
+  不能用 mock 结果替代。
+- 工作区存在与本任务无关的 Trellis 升级/onboarding 改动；提交必须使用精确
+  文件列表，不能把这些文件一起 stage。
+
 ## 1. Preflight 与基线
 
 - [ ] 检查当前分支为 `codex/creative-review-loop`，base 为最新 `origin/main`。
