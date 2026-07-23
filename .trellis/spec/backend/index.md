@@ -19,7 +19,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
-| [Local Agent Workflow Contracts](./agent-workflow-contracts.md) | Codex task, artifact, state, resume, and quality-gate contracts | Active |
+| [Idea Workflow Contracts](./agent-workflow-contracts.md) | Prompt-injected Codex tasks, Hub persistence, seven-step routing, and absolute gates | Active |
 
 ---
 

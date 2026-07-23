@@ -1,224 +1,145 @@
-# 端到端黑客松 Agent：产品定义
+# HackSome Idea Phase v1 — 产品需求文档
 
-## Goal
+## 目标
 
-定义一个能够“解构并自主完成黑客松”的本地 Agent：输入黑客松题目或自然语言 Initial Prompt 后，完成机会/需求发现、Idea 构思与淘汰、所有过线 Idea 的并行产品构建、迭代评审和 Pitch，最终为每个完成的项目交付可演示的 Beta GitHub Repo 与 Pitch Deck。
+实现一个小型、本地运行、第一版仅适配 Codex 的中控系统。它接收一道黑客松赛题，最终产出零个或多个有真实依据的 Useful Idea Card。
 
-首轮规划的目标不是立即实现，而是明确产品楔子、自治边界、质量判断机制、MVP 范围与验证标准，并将讨论沉淀为可执行文档。
+这一版本只负责寻找 Idea。Build、GitHub Repo 和 Pitch 属于后续独立系统，不在本阶段实现。
 
-## Background
+产品是否成功，不能只看它有没有生成文件。更重要的判断是：用户能否看懂完整的推理过程，并愿意从最终 Idea Card 中选择至少一个进入 Build 阶段。
 
-- 项目暂名 HackSome，以用户 2026 年 3 月已经取得良好实际效果的 ClaudeHack 为基础，保留其有效方法，并扩展新的能力与工作流。
-- 黑客松 Agent 面对两类不同目标：
-  - `Useful`：真实问题、可用产品雏形或 Startup 雏形。
-  - `Have Fun / Be Creative`：惊喜、趣味、原创表达与现场传播力。
-- 当前优先把 `Useful` 路线讨论清楚；`Creative` 路线保留，但因对现阶段 Agent 创意能力信心不足，暂不展开其详细方法。
-- 用户认为主要失败模式之一是产出带有明显“AI 味”：同质化、表面完整但缺少判断、审美、真实洞察与记忆点。
-- 当前仓库尚无产品实现，只有 Trellis 项目脚手架。
+## 背景
 
-## Confirmed Constraints
+ClaudeHack 是一个效果很好的参考项目，不是一个需要被纠正的旧系统。HackSome v1 会保留 ClaudeHack 中有价值的并行探索思路，同时把 Idea 阶段单独拆出来，使其过程更清楚、更容易复盘。
 
-- 长期底层执行能力计划覆盖 Codex 与 Claude Code；v1 只实现 Codex 适配，不提前实现 Claude Code 适配。
-- 第一版只需本地运行，不建设 VM 或 Docker 隔离层。
-- v1 的实现范围是“Codex 最小运行底座 + Useful Idea 端到端编排”。最小底座从 Useful 流程的实际需要中长出来，不先建设脱离具体流程的通用 Agent 平台。
-- v1 的底座只需要承担 Codex 调用、有限并发、运行状态、过程记录、结构化产物、失败重试与恢复；不提前抽象多模型 Provider、通用 Workflow DSL、数据库、可视化控制台或分布式调度器。
-- v1 控制层沿用 ClaudeHack 已验证的 Python 控制面思路，使用 Python + `asyncio` 启动和管理多个本地 `codex exec` 子进程；不在第一版切换到 TypeScript SDK，也不依赖仍处于 beta 的 Python SDK。
-- 第一版刻意保持很小，只验证 Useful Idea 的纵向闭环；第二版、第三版根据真实运行中的误杀、误放、低质量来源和重复 Idea 再增加能力，不根据想象提前扩建。
-- v0.1 使用一道具体、真实的黑客松题目作为首个验收基准。输入结构仍保持通用，但本轮不要求证明它已经可以泛化到所有赛题。
-- Workflow 必须允许非线性回路：Idea 可以被证伪、淘汰或重选，产品与 Pitch 也需要基于观察反复补齐。
-- 并行探索和一次推进多个项目是新版必须保留的核心能力；这是 Agent 相对人类团队的重要优势，不应默认收敛成只构建一个项目。
-- 候选采用统一的绝对质量门槛，只淘汰不合格项，不做固定名额或 Top-K 式相对筛选；若 10 个 Idea 都过线，则 10 个都继续。
-- 不把“方向必须彼此不同”设为硬约束；相似 Idea 只要各自可能成功并通过质量门槛，就可以同时保留。
-- 一个存活 Idea 应能散射到约 5–6 个并行 Agent 执行工作，再汇合为该项目的下一版产物；Agent 分工由项目当下需要动态决定，不采用固定角色表。详细调度策略留到后续讨论。
-- 目标是无 Human-in-the-loop，或只允许少量人类辅助设计；具体自治边界仍待定义。
-- 每个最终过线项目都交付一个 Beta 级 GitHub Repo 与一份 Pitch Deck；项目总数由质量门槛决定。
+HackSome v1 不复制、也不修改 ClaudeHack 的 Build 工作流。
 
-## Requirements
+之前 HackSome 的 S0–S11 实现由本方案取代。已有 Git checkpoint 是回滚边界，当前工作区中的旧实现可以直接覆盖。
 
-### R1. Challenge intake
+## 产品要求
 
-- 接受黑客松题目、规则与/或自然语言 Initial Prompt。
-- 从输入中提取评价标准、硬约束、时间预算、允许技术和交付格式；缺失信息需要被显式标记而不是默默脑补。
+### R1 — 七步 Idea 工作流
 
-### R2. Idea discovery and elimination
+系统必须实现以下逻辑流程：
 
-- 支持 `Useful` 与 `Creative` 两类目标，并允许同一题目采用不同的研究与评审方法。
-- 生成多个候选 Idea，并保留其证据、假设和可行性判断；不以差异化本身作为硬性存活条件。
-- 用统一、可解释的绝对门槛淘汰不可行候选，不对合格候选进行强制排序或限额筛选。
-- 在进入高成本构建前淘汰明确不合格项；后续出现反证时仍允许回退、换 Idea 或缩小承诺。
+1. 解析赛题；
+2. 扩散出自然、宽泛的人群类型；
+3. 每个人群独立且并行地进行 Research；
+4. Problem Writer 产出 Problem，每个 Problem 再进入独立的 Problem Gateway；
+5. 每个通过 Gateway 的 Problem 进入 Idea Generator；
+6. 每个 Idea 都进入一个独立的 Idea Rate Team / Red Team；
+7. 将通过 Red Team 的 Idea 确定性地校验并发布为 Idea Card。
 
-#### R2.1 Useful route
+控制器内部可以使用自己的阶段名称，但本版本不得重新加入以下环节：Research Verifier、竞品研究、Idea Revision、Build Feasibility、Challenge Compliance、Build 或 Pitch。
 
-- 先寻找原料，再组合成 Idea，避免直接要求模型凭空脑暴产品。
-- 基本顺序是：找到具体的人群 → 找到他们真实遇到的问题 → 探索能够解决或缓解问题的产品/机制 → 形成产品 Idea。
-- 第一版先由一个 Agent 根据题目扩散出相关的职业、人群或类型，再分别从这些人群出发寻找问题。初始人群可以保持在“老师”“学生”“独立开发者”等层级，不要求同时定义具体做事场景。
-- v0.1 的人群扩散 Agent 不使用网页搜索。它只读取用于需求发现的 Challenge 视图并扩散宽泛人群；GitHub、Reddit 和其他外部材料的搜索全部从后续 Problem Research 开始。
-- 人群扩散阶段不得为人群编写未经研究的任务、痛点或场景；具体场景和更精确的子人群必须在后续问题研究中从真实材料里发现。范围不向与题目无直接关系的人群无限扩张，始终找不到真实问题证据的人群自然停止。
-- 采用纯问题驱动：黑客松指定技术不作为 Useful Idea 的起点，也不从技术能力反向寻找应用场景。
-- 产品方向形成后再检查技术是否真正必要或合适；若比赛规则强制使用指定技术，则把技术适配作为合规门槛，但不得为了适配技术而编造需求。
-- 真实问题、具体发生场景和更细的人群划分必须来自可追溯的外部材料或用户提供的研究资产，不能由 Agent 在人群扩散阶段提前编造。
-- v1 的 Research Agent 使用 Codex 原生网页搜索。Prompt 和阶段规则应优先引导它到用户自然讨论问题的地方，尤其是 GitHub Issues/Discussions 与 Reddit 帖子/评论；同时根据人群选择 App Store、产品评价站、专业论坛、Hacker News 等更合适的来源，不能为了凑平台而搜索无关内容。
-- GitHub 重点寻找 bug、feature request、工作流摩擦、重复手工步骤和用户自己写的 workaround；Reddit 重点寻找“怎么处理”“有没有工具”“受够了什么”“为什么换掉某个产品”等自然讨论，以及评论中被多人认同或反驳的替代办法。
-- 每个 Audience 建立一条独立研究分支。v0.1 首轮默认同时运行 3 个彼此隔离的 Research Agent；数量可配置，它只是一次执行批次，不是证据或问题的产出配额。
-- 同一分支内的 Research Agent 读取完全相同的 Audience、`DiscoveryView` 和研究规则，不预设痛点方向，也不强制彼此寻找不同类型的问题。多个独立 Agent 从不同材料发现同一问题时，这种重复可以增强可信度，不能因为内容相似就自动删除。
-- Research Agent 只提交候选证据、查询与访问记录、反例和仍待补充的缺口；它不创建正式 Problem Card、不判断问题是否过线，也不提出产品 Idea。
-- 每个 Research Agent 独立写一份 `research/<audience-id>/<researcher-id>.md`；下游阶段直接读取该 Audience 下的整组研究文档。
-- 每份研究文档完整保留自己的来源、原文、查询记录、暂定主张、反例和搜索缺口，并在写完后保持不变。不同文档发现相同问题时仍全部保留；后续归纳阶段可以引用它们之间的相互印证，但不能改写原研究记录。
-- 第一轮结束后，Orchestrator 只记录这组文档已经完成，不做语义合并或筛选。若后续证据复核或问题归纳发现明确缺口，再围绕该缺口启动有边界的追加研究并产生新文档；如果新搜索已不再增加实质材料，或确实没有找到证据，该人群分支就停止。合法的空结果优于编造问题。
-- 研究原料至少包含：具体人群、来源 URL、用户原话或直接描述、上下文、候选问题主张、当前替代办法、反例或不确定项，以及产生它的查询记录；正式的问题卡要等独立证据复核和问题归纳之后再创建。
-- Research Agent 提交的证据不能直接视为有效。每份研究文档由一个未参与该研究的新 Codex session 复核，并产生对应的 `verification/<audience-id>/<researcher-id>/verifier-001.md`；它不修改原研究文档，也不与其他复核结果混成总文档。
-- Verifier 必须重新打开研究文档中的每个来源，逐条检查 URL 是否可访问、摘录是否准确、上下文和人群是否匹配、暂定主张是否被材料真正支持，并标记为“支持”“部分支持”“不支持”或“无法访问”。
-- 如果第一份复核文档留下部分支持、冲突或无法明确判断的证据，再启动另一个独立 Verifier，并新增 `verifier-002.md`。两份复核文档都保留；系统不通过覆盖旧判断或简单多数投票来制造确定性，仍无法解决的分歧继续标为不确定。
-- Verifier 只复核已有材料，不替 Research Agent 搜索替代证据、不生成 Problem Card、不执行问题门槛，也不提出产品 Idea。后续阶段同时读取研究文档及其全部复核文档；只有得到足够支持的材料才能作为问题主张的正面依据。
-- 必须保留一个负责产出 Problem 文档的 Agent，以及一个独立的 Problem Gateway。前者负责把材料写成可供后续使用的问题文档，但不能决定自己的问题是否过线；后者使用新的 Codex session 和统一绝对门槛，只负责通过、要求补证或淘汰。Problem Writer 与 Gateway 不得合并为同一个判断主体。
-- v0.1 明确保留 S3、S4、S5 三个阶段和三个独立判断边界：S3 只复核证据并输出 Verification 文档；S4 使用新的 Agent 读取已复核材料并输出 Problem 文档；S5 再使用新的 Agent 执行 Gateway。S3 不兼任 Problem Writer，S4 也不能批准自己产出的问题。
-- S4 对每个 Audience 默认启动 3 个互相隔离的 Problem Writer，数量可配置。它们读取相同的完整 Research 与 Verification 文档，不预设问题方向、不强制彼此差异，也不读取其他 Writer 的产物；每个 Writer 可以输出零到多份独立 Problem 文档。
-- S4 不做排名、限额、合并或过线判断。不同 Writer 得出相似问题时仍分别保留；相似度本身既不是淘汰理由，也不代表问题已经通过 S5。
-- 缺少外部证据的问题先标记为“待验证”，并获得一轮额外搜索机会；再次搜索仍找不到真实用户表述或现有替代办法时才淘汰，不因第一次证据不足立即误杀。
-- v1 暂定的问题准入门槛是：问题反复发生或单次后果严重；用户已为它付出时间、金钱或采用麻烦的替代办法；软件能带来实质改善而不只是增加一个界面。满足门槛的问题全部继续，不做相对排名。
-- S5 对每份 Problem 文档先启动一个独立 Gateway，并单独保存判断文档。结果只有“通过”“需要补证”或“候选淘汰”：通过项直接进入 Idea 生成；需要补证必须返回可执行的搜索缺口并进入一次有边界的 S2 → S3 → S4 回路；候选淘汰不能立即生效。
-- 候选淘汰必须再由第二个看不到第一次结论的新 Gateway 复核。只有两个 Gateway 都指出同一个明确门槛失败时才真正淘汰；判断不一致时保留为待确认，不能用简单多数或第一次判断误杀。
-- Gateway 判断不一致时，如果该问题尚有补证预算，则根据分歧中的具体缺口执行唯一一次定向补证；补证完成并用新 session 重判后仍存在 Gateway 分歧，直接淘汰该问题。v0.1 不增加第三名裁决者，也不让不确定分支持续挂起。
-- 上述门槛是需要用真实运行结果校准的初始假设；后续可根据误杀与误放案例调整，不作为不可修改的永久规则。
-- 每个通过门槛的问题可以展开成多个产品 Idea，不要求只接受第一个或最直接的答案。Agent 应先理解用户完整流程，再考虑预防问题、自动完成步骤、辅助判断、减少交接或帮助恢复等不同介入位置。
-- 每个问题产生的 Idea 数量不预设；当继续生成只得到明显重复方案时停止。所有独立成立并通过后续门槛的 Idea 均可保留。
-- S6 对每个通过 S5 的 Problem 默认并行启动 5 个互相隔离的 Idea Generator，数量可配置。它们读取相同的 Problem、Gateway 通过记录和已验证证据，不预设产品方向、不强制彼此差异，也不读取其他 Generator 的输出。
-- 每个 Idea Generator 可以输出零到多份独立 Idea Draft。5 是首轮并行计算量，不是 Idea 配额；S6 不做排名、限额、合并或质量放行。
-- 第一轮 Idea Generator 只根据人群、问题、证据和用户现有流程构思产品，不读取竞品研究或 `ComplianceView`，也不为了 Sponsor 技术反向改变需求。每份 Draft 必须描述真实输入、实际处理和可用结果或动作组成的端到端核心流程，不能只给产品名或前端页面概念。
-- S6 之后不设置 Idea Consolidate / 去重 Agent。所有独立 Idea Draft 直接进入竞品研究；Orchestrator 只维护文件路径索引，不理解、合并或删除语义相似的 Draft。相似方案后续分别研究和判断。
-- 产品方案采用两步顺序：先只依据用户、问题和现有工作流程独立生成第一批 Idea；随后再研究已有产品、竞品和类似项目，检查重复、缺口与用户切换理由，并据此修改、合并或淘汰 Idea。
-- 不在第一轮生成前大量阅读竞品，避免过早被现有产品形态锚定；也不允许跳过后续竞品检查而直接进入构建。
-- S7 为每份 Idea Draft 首轮启动 1 个独立 Competitor Researcher；所有 Idea 的研究任务可以同时运行。Researcher 单独写入竞品研究文档，不修改 Idea、不执行质量判断，也不因找到相似产品而直接淘汰。
-- 竞品研究必须覆盖直接竞品、间接替代办法、相关开源项目、用户当前 workaround、用户采用或放弃现有产品的原因，并保留 URL、原文或可核实事实、查询记录、反例和覆盖缺口。
-- 如果后续 Idea Reviewer 指出一个明确的竞品覆盖缺口，S7 可以为该 Idea 增加 1 个定向 Researcher 并产生第二份独立文档；v0.1 不进行无边界的重复搜索，也不把两份结果揉成统一报告。
-- 竞品研究之后必须把 Idea 修改与 Idea 放行拆成两个阶段。S8 的 Idea Revision Agent 负责基于竞品材料继续发展 Idea 文档；S9 使用一个全新的独立 Codex session 作为 Idea Red Team，不能让修改者批准自己的方案。
-- Idea Red Team 的目的不是润色或补全方案，而是对“Idea 作为一个产品 Idea 是否成立”进行对抗性判断。它至少必须回答：目标用户能否在真实使用中明确感受到产品价值；这份价值是否由一条真实 User Flow 交付，而不是功能清单、页面跳转或抽象的效率承诺。
-- 真实 User Flow 至少需要说明触发点、用户提供的真实输入、产品实际完成的处理、用户获得的结果或现实动作，以及价值被用户感知的时刻。Red Team 单独输出评审文档，不直接改写 Idea Card。
-- S9 Red Team 的范围保持在产品层面：除上述两项外，还要检查 User Flow 是否真的产生所声称的价值、用户相对当前办法是否有实际采用理由，以及 Idea 是否仍忠于已通过的 Problem 而没有为了方案偷偷改题。
-- S9 不判断工程实现难度、黑客松时间内能否完成、Sponsor 技术是否必要或比赛规则是否满足。工程与时间可行性在 Red Team 通过后由独立的 Build Feasibility Agent 检查；v0.1 不设置单独的 Challenge Compliance Agent。
-- `ComplianceView` 中能够确定性判断的硬性规则、必需字段和交付物由 Orchestrator 在最终输出前检查。S8 仍需在 Idea Card 中如实说明 Sponsor 技术可能承担的作用，但不为“技术是否足够有意义”额外设置语义 Gateway。
-- S10 为每个通过 S9 的 Idea 启动一个独立 Build Feasibility session，判断它能否在给定黑客松时间、本地环境和可用依赖下做成真实端到端 Beta。评审不能把假数据、人工代替核心处理或只做界面展示视为可行实现。
-- S10 的结果为“可行”“可通过缩减实现”或“根本不可行”。只有在保留同一核心 User Flow 和用户价值的前提下，才允许返回 S8 缩减一次；缩减后的 Idea revision 必须依次经过新的 S9 Red Team 和新的 S10 Feasibility session。
-- 如果缩减必须破坏已通过的价值或 User Flow，直接淘汰；使用唯一一次缩减机会后仍不可行，也直接淘汰。S10 不比较 Idea，不按剩余时间或名额做相对筛选。
-- S11 不调用 Agent。Orchestrator 使用确定性代码生成 `idea-report.md`：保留全部最终通过的 Idea，不排名、不限数量；每项链接回 Problem、Research、Verification、竞品、Red Team、Feasibility 和相关 revision，独立 Idea Card 仍是事实源。
-- `idea-report.md` 同时包含淘汰附录，记录候选在何阶段、因哪条明确理由被淘汰。报告只能抽取和排版已有字段，不能重新解释、润色或改变结论；零个 Idea 通过时也必须生成合法报告并说明完整淘汰轨迹。
-- S9 的结果为“通过”“可修复”或“根本不成立”。没有可感知价值、没有真实 User Flow，或只有更换已通过的 Problem 才能成立时，直接淘汰；核心价值仍成立但 Flow 或产品机制存在明确局部缺陷时，才允许返回 S8 修改一次。
-- S8 根据首份 Red Team 文档产生一个新 Idea revision 后，必须由另一个全新 Red Team session 独立重审。任何返工后的 Red Team 都不读取之前的 Red Team 结论；新 revision 仍未通过时直接淘汰，不再因为同一原因继续循环。S10 触发的唯一一次范围缩减也必须走这条独立重审路径，但不会重新获得 S9 的产品修复机会。
-- Idea 阶段使用轻量 Idea Card，不提前扩写完整 PRD。每张卡必须回答：谁会使用；具体问题；从开始使用到获得结果的完整过程；核心功能；现有办法为何不足；所选技术实际承担什么作用（不需要特殊技术时也要明确说明）。
-- 问题证据沿用来源问题卡；商业模式、详细系统架构和完整页面清单不要求在 Idea 阶段完成。
-- 不把交付目标降格为只有前端外观的 Demo；Idea 必须能够发展为端到端的完整产品，至少有一条使用真实输入、真实处理并产生可用结果或动作的核心流程，而不是只展示假数据页面。
+### R2 — Useful 路线的发现方式
 
-#### R2.2 Creative route
+- Audience 扩散从职业、群体、角色或宽泛用户类型开始。
+- 在 Research 之前，不得凭空编造非常具体的工作场景，例如“每周需要为不同学生准备练习题的初中老师”。
+- Research 需要从公开信息中寻找真实行为、痛点、现有解决方式和反面证据。
+- Research Prompt 应在合适时优先搜索 Reddit 和 GitHub，同时允许使用其他公开来源。
+- 每个人群拥有独立的 Research Session。v1 默认每个人群一个 Researcher，但数量可配置。
+- 一个 Problem Writer 可以为对应人群产出零个或多个 Problem。
+- 每个 Problem Gateway 都必须是一个新的独立 Session。
+- Problem Gateway 判断该 Problem 是否真实、有证据、与赛题相关，并且对用户确实重要。
+- 每个通过 Gateway 的 Problem 会扇出到多个独立的 Idea Generator Session。
+- v1 默认每个 Problem 启动五个 Idea Generator，但数量可配置。
+- 每个生成出的 Idea 都必须进入一个新的独立 Red Team Session。
+- Red Team 只围绕两个核心问题进行绝对判断：
+  1. 用户能否真实感受到产品价值？
+  2. 产品里是否存在一条真正完整的端到端 User Flow？
+- 如果核心价值依赖产品无法控制的权限，或依赖外部角色后续采取行动，也应视为 User Flow 不成立。
 
-- 保留为独立路线，后续单独讨论其生成和评审方法；不沿用 Useful 路线的痛点频率标准强行评价。
+### R3 — 动态候选数量
 
-### R3. Iterative build loop
+- 系统不设置固定产出数量。
+- 不做 Top-K、相对排名、强制方向差异或语义去重。
+- 多个 Idea 即使相似，只要都能独立通过统一质量门槛，就全部保留。
+- 任何一个阶段都允许产出零个候选结果。
+- 一个最终没有任何 Idea Card 的 Run 也可以是流程上有效的结果。
+- 所有并行任务受一个全局可配置并发上限约束。
 
-- 将构建视为带反馈的循环，而不是一次性代码生成。
-- 所有通过 Idea 门槛的项目均可并行推进；最终交付数量由质量门槛决定，而不是预设配额。
-- 每个存活 Idea 可根据当下需要动态散射为约 5–6 个并行 Agent 任务；系统需要在汇合时处理产物所有权、冲突、证据归并和下一轮任务生成。
-- 可以记录候选之间的相似度和失败相关性用于诊断，但不得仅因方向相似而淘汰一个已经过线的候选。
-- 每轮都要产出可观察证据（运行结果、截图、测试、用户路径或评审反馈），再决定继续、修补、缩减还是回退。
-- 本地编排 Codex 与 Claude Code，并明确任务分工、上下文交接和产物所有权。
+### R4 — Prompt 是 Agent 之间的上下文传输方式
 
-### R4. Taste and anti-slop quality control
+- Agent 需要读取的上游内容，必须由 Hub 直接作为文本注入它的 Prompt。
+- Agent 不应被要求寻找或读取上游 Markdown 文件。
+- Hub 负责选择上下文、读取已经持久化的内容，并把原文放进有明确边界的 Prompt 区块。
+- Research 中来自社区或网页的文字必须标记为“不可信数据”，不能被当作对 Agent 的指令。
+- Agent 使用阶段专属的结构化 JSON 返回结果。
+- JSON 中的 Markdown 正文由 Hub 保存为正式文件；Agent 不直接写 canonical 文件。
 
-- 质量评审不能只检查功能是否存在，还应检查洞察真实性、产品取舍、交互细节、视觉一致性、叙事可信度与记忆点。
-- 引入至少一种与生成者相分离的批评/对抗机制，且批评必须能够改变下一轮动作，而非只生成一份评分报告。
-- 避免用“更多 Agent / 更多轮次”代替明确的品味标准和可验证证据。
+### R5 — Hub 保存完整过程
 
-### R5. Pitch synthesis
+对于每个 Run 和每个 Task，Hub 必须保存足够的信息，用于后续复盘和确定性检查：
 
-- Pitch 必须来自实际构建证据，不能独立编造产品能力、用户反馈或技术结果。
-- 生成可演示叙事、Demo 路径和 Pitch Deck，并保持 Repo、现场 Demo 与 Deck 的事实一致。
+- 原始赛题输入；
+- Task ID、阶段、父级候选关系和任务状态；
+- 实际发送给 Codex 的完整 Prompt；
+- 使用的输出 Schema；
+- Codex Session ID、尝试次数、时间、耗时、用量和错误；
+- Codex 原始 stdout/stderr JSONL 和原始 last message；
+- 解析后的结构化输出；
+- 所有发布后的 Markdown；
+- pass/reject 决策和完整候选 lineage。
 
-### R6. Final delivery
+“把内容保存成文件”和“让 Agent 通过文件读取上下文”是两件不同的事：
 
-- 为每个最终过线项目输出可运行、可理解、可演示的 Beta Repo。
-- 为每个最终过线项目输出完整 Pitch Deck。
-- 保留关键决策轨迹，使用户能够看出为何选择/淘汰某个 Idea，以及质量门槛如何影响最终结果。
+- 文件是审计、复盘和持久化介质；
+- Prompt 才是 Agent 之间唯一的上下文传输介质。
 
-### R7. v1 local control layer
+### R6 — 运行边界
 
-- 提供一个具体的 Codex Runner，支持启动一次任务、持续接收事件、获得结构化结果、取消任务，并在中断后继续已有任务。
-- Codex Runner 使用 `codex exec --json` 接收 JSONL 事件，使用 `--output-schema` 约束阶段最终产物，并保存 session id 供 `codex exec resume` 恢复。
-- 每次运行在本地留下可检查的状态与产物，包括输入、当前阶段、Codex 会话标识、尝试次数、失败原因、研究证据、问题卡、Idea Card 和淘汰记录。
-- Useful Idea 各阶段由明确的编排代码连接，不把阶段切换、重试和质量门槛完全藏在一个超长 Prompt 中。
-- 支持有上限的并行执行；并行数量是运行参数，不用于强制限制最终保留多少人群、问题或 Idea。
-- v1 不要求先定义可替换的模型 Provider 接口。未来加入 Claude Code 时，再依据两个真实运行时的共同点提取抽象。
+- v1 只支持本地 Codex CLI。
+- 第一版不需要 VM 或 Docker。
+- 每个阶段 Session 都必须与用户环境中的插件、Skill 和项目指令隔离。
+- 只有 Research Session 开启实时 Web Search。
+- 其他 Session 显式关闭 Web Search，也不需要写工作区。
+- 基础设施重试可以恢复同一个 Task 的准确 Codex Session。
+- 不同逻辑角色之间必须使用不同 Session，不能继承彼此的隐藏上下文。
 
-### R8. Executable workflow contracts
+### R7 — 最终 Idea Card
 
-- 在开始实现前，Useful Idea 的每一个阶段必须明确：为什么存在、接收什么输入、产出什么结果、允许读取哪些共享内容、使用哪个 Prompt、何时停止、失败后去哪里。
-- 阶段之间通过经过 Schema 校验的显式产物交接，不能依赖“上一个 Agent 应该在聊天里说过”这种隐式记忆。
-- Prompt 分为少量全局原则与阶段专用指令；不得把全部方法、全部历史和全部候选塞进每一个 Agent 的 Prompt。
-- 必须明确哪些 Agent 使用全新 Codex session，哪些情况允许恢复原 session。独立研究、证据复核和质量判断之间要避免共享会话造成结论污染。
-- 共享 memory 必须有明确的事实来源、版本和读权限；Codex session history 只用于执行连续性，不自动成为跨 Agent 的事实来源。
-- 共享 memory 不要求全部封装成 artifact package。由既有输入逐步发展出来的 Problem、Idea、PRD、Pitch 等内容，可以直接是一个共享的 Markdown 文件：首个 Agent 创建，后续 Agent 读取同一个文件并持续修改。
-- 文件化 memory 分为两类：来源证据、原始题目和决策记录不能被静默覆盖；共享工作文档允许演进，但需要保留修改历史，使系统能够知道当前内容从哪一版发展而来。
-- 并行 Agent 不共享完整聊天记录，并且必须拥有不同的输出文件路径。同一份 Living Document 在任何时刻只允许一个 Agent 写入；后续修改按 revision 串行执行。v0.1 不支持多个 Agent 同时修改同一个文件。
-- Research、Verification、Problem、Idea、竞品、Red Team 和 Feasibility 等长文档统一使用普通 Markdown 正文，并在顶部加入小型 YAML front matter，保存 id、artifact 类型、run、stage、status、revision、session 和来源路径。它不是额外 package；正文仍可直接阅读和修改。
-- v0.1 不为每份 Markdown 再保存内容重复的 JSON sidecar。`state.json`、任务索引、Audience 等短机器集合使用 JSON，追加式决策与事件使用 JSONL；Codex 的结构化返回只报告完成状态和写入路径，不复制文档正文。
+一个 Idea Card 至少需要讲清楚：
 
-## Acceptance Criteria for the Planning Phase
+- 给谁使用；
+- 用户面对的真实 Problem；
+- 产品是什么，以及它的核心机制；
+- 一条具体、完整的端到端 User Flow；
+- 用户在哪个时刻能够真实感受到价值；
+- AI 或赛题技术为什么真正参与了核心流程；
+- 可以现场跑通的 Demo 边界；
+- 重要假设、风险和支持证据；
+- 来源 Problem、Generator Session 和 Red Team 决策的 lineage。
 
-- [ ] 明确 MVP 的首要评价函数：是在限定时间内“赢一次具体黑客松”，还是构建可泛化的平台能力。
-- [ ] 明确 v1 输入契约、输出契约、时间/成本预算与 Human-in-the-loop 边界。
-- [x] 明确 v1 Agent runtime 范围为 Codex-only；Claude Code 支持留到后续版本。
-- [x] 明确 v1 只建设支撑 Useful Idea 流程所需的最小运行底座，不提前建设通用多模型平台。
-- [x] 明确 v1 使用 Python + `asyncio` 编排本地 `codex exec` 子进程。
-- [x] 明确 v0.1 先用一道真实黑客松题目完成端到端验收，不以跨赛题泛化作为首版完成条件。
-- [ ] 定义 Idea 生成、证伪和切换的可执行机制，而不只是一组 prompt。
-- [ ] 为 Useful Idea 每个阶段定义输入、输出、Prompt、共享 memory 读取范围、session 边界、停止条件与回路。
-- [x] 明确 shared memory 以文件为中心，并允许普通共享文档在多轮 Agent 工作中持续演进；不要求把每个文档包装成独立 package。
-- [x] 明确 v0.1 的并行任务各自拥有独立输出路径；同一 Living Document 只允许单 Writer 串行修改，不设计并行写入与合并机制。
-- [x] 明确长文档使用 Markdown + YAML front matter，运行状态与索引使用 JSON / JSONL，不为每份正文维护重复 JSON sidecar。
-- [x] 定义 Useful 路线中“具体人群”和“真实问题”的来源、证据格式与初始可信度规则。
-- [x] 明确 v0.1 的 Audience Expansion 不联网，只产出宽泛职业、人群和类型；外部搜索从 Problem Research 开始。
-- [x] 明确 S2 按 Audience 建立研究分支、首轮默认用 3 个同输入的独立 Research Agent 并行；每个 Agent 保留独立研究文档，不做汇总合并，并由后续发现的明确证据缺口决定是否追加搜索。
-- [x] 定义问题卡的“待验证 → 再搜索 → 通过/淘汰”状态与可检查标准。
-- [x] 明确 v1 优先搜索 GitHub、Reddit 等自然用户材料，并由独立 Agent 复核来源是否真正支持问题主张。
-- [x] 明确 S3 为每份研究文档创建一份独立复核文档，原研究记录不改写、不汇总覆盖；只有出现部分支持、冲突或模糊判断时才增加第二份复核文档。
-- [x] 明确 Problem 文档的产出者与 S5 Problem Gateway 必须分离；S5 使用独立 session，不能让 Problem Writer 自己批准自己的问题。
-- [x] 明确 S3 Evidence Verification、S4 Problem Writing 和 S5 Problem Gateway 均保留为独立阶段，不复用同一个 Agent session。
-- [x] 明确 S4 每个 Audience 默认使用 3 个同输入的独立 Problem Writer，各自产出独立文档，不强制方向差异、不做合并或固定数量筛选。
-- [x] 明确 S5 每个问题先由一个独立 Gateway 判断；通过直接继续、证据不足进入定向补证；淘汰必须由第二个盲审 Gateway 在同一明确门槛上确认。
-- [x] 明确 S5 最多补证一次；补证后 Gateway 仍不一致时直接淘汰，不增加第三名裁决者或无限挂起。
-- [x] 明确 S6 每个通过的问题默认使用 5 个同输入的独立 Idea Generator；每个可输出零到多份独立 Draft，不强制方向差异、不设最终数量配额。
-- [x] 删除独立的 Idea Consolidate 阶段；S6 的全部独立 Draft 直接进入竞品研究，Orchestrator 只建立路径索引，不做语义去重。
-- [x] 明确 S7 每份 Idea Draft 首轮使用 1 个独立 Competitor Researcher，所有 Idea 并行；只有后续指出明确覆盖缺口时才增加 1 个定向 Researcher，并保留独立研究文档。
-- [x] 将 Idea Revision 与 Idea Gateway 拆开；S9 使用独立 Red Team session，至少检验用户能否真实感知价值，以及该价值是否通过一条真实 User Flow 交付。
-- [x] 将 S9 Red Team 限定为产品成立性判断：价值、User Flow、价值交付、采用理由和 Problem 忠实度；工程可行性和比赛硬规则不混入该 Red Team。
-- [x] 不设置独立 Challenge Compliance Agent；硬性规则由 Orchestrator 根据 `ComplianceView` 做确定性检查，工程与时间可行性由单独 Build Feasibility Agent 处理。
-- [x] 明确 S10 每个 Idea 使用独立 Build Feasibility session；允许一次保留核心价值与 User Flow 的范围缩减，随后重走 S9 与 S10，仍不可行则淘汰。
-- [x] 明确 S11 仅由确定性代码生成无排名 `idea-report.md`；独立 Idea Card 是事实源，报告展示全部通过项、证据链接和淘汰轨迹，不调用总结 Agent。
-- [x] 明确 S9 根本不成立时直接淘汰；只有明确可修复的问题允许返回 S8 一次，并由全新 Red Team session 重审，第二次仍失败则淘汰。
-- [x] 定义一个 Useful Idea 何时足以代表端到端完整产品，而不只是前端 Demo。
-- [ ] 定义统一的绝对质量门槛，确保最终数量可变、只淘汰不合格项、不做固定配额或 Top-K 筛选。
-- [ ] 定义“一个 Idea → 动态分配约 5–6 个并行 Agent → 汇合”的任务结构、产物契约、冲突策略和下一轮触发方式。
-- [ ] 定义 `Useful` 与 `Creative` 两条模式共享和分叉的部分。
-- [ ] 定义 Build 迭代循环、停止条件、失败恢复与上下文交接。
-- [ ] 把“anti-AI-slop / taste”转化为可观察的质量门槛和对抗评审机制。
-- [ ] 定义 Repo、Demo 与 Pitch Deck 之间的事实一致性要求。
-- [ ] 研究并准确记录 ClaudeHack 已验证有效的设计，明确新版应直接继承的部分，以及因新增目标而需要扩展的部分；不把新版定位成对 ClaudeHack 的纠错。
-- [ ] 完成最终版 `prd.md`；若进入实现规划，补齐 `design.md` 与 `implement.md` 并由用户评审。
+只有 Markdown 结构有效，并且对应 Red Team 决策为 `pass`，Hub 才能发布 Idea Card。
 
-## Out of Scope for v1 (Provisional)
+这一步由控制器确定性执行，不再创建额外的 Agent Session。
 
-- 云端多租户服务。
-- VM、Docker 或强沙箱隔离。
-- 完全无人监管地使用真实付费账户、部署到生产或对外发布内容。
-- 同时优化所有黑客松类型、所有技术栈和所有评委偏好。
-- 在尚未定义质量判据前搭建复杂的通用多 Agent 框架。
-- Claude Code 适配、通用多模型 Provider 层和运行时插件系统。
-- 通用 Workflow DSL、数据库、Web 控制台与分布式任务调度。
+## 验收标准
 
-## Open Questions
+1. 一个脚本化端到端测试能够经过全部七步，并且最终只发布 Problem Gateway 与 Red Team 都通过的 Idea Card。
+2. 当存在至少两个人群时，各人群 Research 会在全局并发上限内重叠执行，并且不会共享 Codex Session。
+3. 在默认配置下，一个通过的 Problem 会启动五个独立 Idea Generator；所有有效输出都保留，不受相似程度和数量影响。
+4. 测试能够证明下游 Prompt 包含被选中上游 Markdown 的完整原文，同时不要求 Agent 读取上下文文件。
+5. 测试能够证明只有 Research 开启 Web Search。
+6. 每个 Task 目录都包含完整 Prompt、请求与结果元数据、原始模型输出和 Codex 日志；Run 状态及决策记录能够定位每个任务和候选项。
+7. 被 Problem Gateway 拒绝的 Problem 不会进入 Idea Generator；被 Red Team 拒绝的 Idea 不会变成 Idea Card。
+8. 零人群、零 Problem、零 Idea 和零通过 Idea 都能正常结束，并产生有效的空结果。
+9. `status` 和 `validate` 可以在不调用 Codex 的情况下检查已经保存的 Run。
+10. 如果保留基准测试，PAWN 和米哈游赛题必须继续作为两份不同的 fixture。
+11. 默认单元测试不调用付费模型，并且全部通过。
 
-- 产品的第一性评价函数与首个目标用户是谁？
-- v0.1 用哪一道真实黑客松题目作为首个验收基准？
-- 首次真实运行后，用什么人工判断记录 Idea 的好坏，并把失败案例转成 v0.2 修改项？
-- “少量人类辅助设计”具体允许在哪些检查点发生？
-- Agent 可用的总时间、token/API 成本和失败重试预算是多少？
-- GitHub 发布、依赖安装、浏览器操作和 Pitch Deck 生成分别允许多大程度的自主外部动作？
-- 如何分别证明 `Useful` 和 `Creative` Idea 的质量，而不是让模型自评？
+## 不在 v1 范围内
+
+- Creative / Have Fun 路线。
+- 独立的 Research Source Verifier。
+- 排名、评委式筛选、强制方向差异或相似度淘汰。
+- 自动 Repair 或 Revision 循环。
+- 竞品研究、Challenge Compliance 和 Build Feasibility。
+- 产品 Build、VM/Docker、GitHub 发布、Pitch 或 Pitch Deck。
+- Claude Code 运行时适配。
+- 修改或 Clone 本地 ClaudeHack 仓库。
+
+## 当前规划状态
+
+v1 暂时没有阻塞实现的产品问题。并行数量均通过配置控制，因此后续可以根据实际测试结果调整，而不需要改变工作流结构。
