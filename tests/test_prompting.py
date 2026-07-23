@@ -54,7 +54,7 @@ class PromptingTests(unittest.TestCase):
                     rendered.text,
                 )
                 self.assertNotIn("`title`", rendered.text)
-                expected_version = "2" if stage == "problem-write" else "4"
+                expected_version = "2" if stage == "problem-write" else "5"
                 self.assertEqual(rendered.template_version, expected_version)
 
     def test_research_reconstructs_situations_instead_of_collecting_facts(self) -> None:
@@ -90,7 +90,7 @@ class PromptingTests(unittest.TestCase):
             "idea-generate",
             (("PASSED_PROBLEM", "# Problem\n\nReal"),),
         )
-        self.assertEqual(rendered.template_version, "4")
+        self.assertEqual(rendered.template_version, "5")
         self.assertNotIn("Felt Value", rendered.text)
         self.assertNotIn("End-to-End User Flow", rendered.text)
         self.assertNotIn("Demo Scope", rendered.text)
@@ -102,15 +102,42 @@ class PromptingTests(unittest.TestCase):
         self.assertNotIn("uncontrolled person", rendered.text)
         self.assertNotIn("unavailable private data", rendered.text)
 
-    def test_red_team_rejects_demo_only_products(self) -> None:
+    def test_generator_requires_an_interesting_product_not_an_information_artifact(
+        self,
+    ) -> None:
+        rendered = render_prompt(
+            "idea-generate",
+            (("PASSED_PROBLEM", "# Problem\n\nReal"),),
+        )
+        self.assertEqual(rendered.template_version, "5")
+        self.assertIn("creative in the product design", rendered.text)
+        self.assertIn("interesting product. I would like to try it", rendered.text)
+        self.assertIn("clear point of view and a distinctive core experience", rendered.text)
+        self.assertIn(
+            "primary value is generating, organizing, or\n"
+            "displaying reports, cards, checklists, dashboards, ledgers, consoles",
+            rendered.text,
+        )
+        self.assertIn("only as secondary outputs", rendered.text)
+        self.assertIn("does not make it a product", rendered.text)
+        self.assertNotIn("Remove the words", rendered.text)
+        self.assertNotIn("Agent-native", rendered.text)
+        self.assertNotIn("novelty", rendered.text)
+        self.assertNotIn("surprise", rendered.text)
+
+    def test_red_team_rejects_demo_only_and_information_only_products(self) -> None:
         rendered = render_prompt(
             "idea-red-team",
             (("IDEA", "# Idea\n\nA polished concept"),),
         )
-        self.assertEqual(rendered.template_version, "3")
+        self.assertEqual(rendered.template_version, "4")
         self.assertIn("fake, mock, or hand-curated data", rendered.text)
         self.assertIn("possible to demonstrate", rendered.text)
         self.assertIn("product on authentic inputs", rendered.text)
+        self.assertIn("primary value in generating, organizing, or displaying", rendered.text)
+        self.assertIn("reports, cards,\n  checklists, dashboards, ledgers", rendered.text)
+        self.assertIn("not a qualifying core product", rendered.text)
+        self.assertIn("accurate, useful, auditable, or part of the user's job", rendered.text)
         lowered = rendered.text.lower()
         self.assertNotIn("hackathon", lowered)
         self.assertNotIn("judge", lowered)

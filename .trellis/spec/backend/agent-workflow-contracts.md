@@ -113,7 +113,10 @@ retains the Gateway artifact for process lineage. Its own Prompt supplies only
 a high-level product identity: design for ongoing real-world use, ensure the
 product remains meaningful after a presentation ends, and treat presentation
 or submission requirements as delivery constraints rather than the reason for
-the product.
+the product. It also requires a specific, thoughtful, interesting product with
+a clear point of view and forbids information artifacts from being the core
+product. These product-generation requirements are not the downstream Red Team
+checklist.
 
 ## 5. Structured-output boundary
 
@@ -233,6 +236,17 @@ downstream Red Team checklist. `First Real Version` describes the first product
 that an actual user can use; it is not a license to substitute a staged demo,
 fake data, or mock integrations for the core outcome.
 
+The Generator MUST discard any candidate whose primary value is generating,
+organizing, or displaying reports, cards, checklists, dashboards, ledgers,
+consoles, summaries, audit packages, task lists, or renamed equivalents.
+Information artifacts MAY appear only as secondary outputs of a product that
+actually completes work or changes something in the user's workflow. The
+Generator also seeks a concrete product that the intended user would find
+interesting and worth trying, preferring one strong product idea and distinctive
+core experience over a bundle of familiar AI features. This requirement MUST
+NOT discourage AI use, require the product to work without AI, demand an
+Agent-native mechanism, or force direction diversity.
+
 ### Reviews
 
 Review Markdown explains the decision against absolute criteria. The stored
@@ -252,8 +266,11 @@ It rejects when:
   rather than authentic user-provided or legitimately accessible inputs;
 - the core mechanism assumes unavailable permissions, private data,
   integrations, or product authority;
-- the product stops at a dashboard, score, report, recommendation, ticket, or
-  generated artifact while the value requires an uncontrolled actor to act;
+- the product's primary value is generating, organizing, or displaying a
+  report, card, checklist, dashboard, ledger, console, summary, audit package,
+  task list, score, recommendation, ticket, or another information artifact,
+  even when that artifact is accurate, useful, auditable, or part of the user's
+  job;
 - the first real version is merely a staged demonstration with no credible
   repeated use after the event;
 - the flow changes, avoids, or restates the passed Problem instead of solving

@@ -10,6 +10,21 @@ product concept around presentation, submission, or short-term showcase
 requirements. Those are delivery constraints, not the reason the product
 exists.
 
+Be creative in the product design. Do not settle for the first obvious or
+generic solution. Find a specific, thoughtful, and interesting way to solve the
+user's real problem. The intended user should hear the Idea and think: “This is
+an interesting product. I would like to try it.” Prefer one strong product Idea
+with a clear point of view and a distinctive core experience over a bundle of
+familiar AI features.
+
+Do not propose a product whose primary value is generating, organizing, or
+displaying reports, cards, checklists, dashboards, ledgers, consoles, summaries,
+audit packages, or task lists. These may exist only as secondary outputs of a
+product that actually completes work or changes something in the user's
+workflow. Renaming a report or dashboard as an Agent, workspace, copilot, or
+operating system does not make it a product. Discard such a candidate and
+develop a real product; return an empty result if no qualifying Idea exists.
+
 An empty result is better than inventing a product that does not fit the
 evidence.
 
