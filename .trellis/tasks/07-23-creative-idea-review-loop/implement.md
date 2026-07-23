@@ -30,7 +30,7 @@
   route-aware `PromptCatalog` 增加显式历史版本 allowlist，旧冻结 Prompt 不会被
   新版本字节或标签替换。
 - 最终离线门禁：ruff、mypy、compileall、Node UI syntax、CLI help smoke、
-  wheel build/resource inspection 全部通过；主项目 `250` tests passed、
+  wheel build/resource inspection 全部通过；主项目 `252` tests passed、
   `8` tests skipped、`0` failed。8 个 skip 仅为当前沙箱明确拒绝 loopback
   socket 的真实 HTTP/lifecycle 测试，普通开发机/CI 仍会执行它们。
 - 待完成：再次 fetch `origin/main`、push、Draft PR。真实浏览器/LAN QA 与

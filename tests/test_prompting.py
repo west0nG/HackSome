@@ -245,6 +245,72 @@ class PromptingTests(unittest.TestCase):
                     manifest_sha256=frozen.manifest_sha256,
                 )
 
+    def test_current_useful_catalog_loads_pre_weston_frozen_versions_exactly(
+        self,
+    ) -> None:
+        previous_versions = {
+            "problem-gateway": "2",
+            "idea-generate": "4",
+            "idea-red-team": "3",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            specs: list[PromptSpec] = []
+            expected_markers: dict[str, str] = {}
+            for stage in useful_prompt_catalog:
+                current = useful_prompt_catalog[stage]
+                template_path = root / f"{stage}.md"
+                marker = f"# Frozen pre-Weston resource for {stage}"
+                template_path.write_text(marker + "\n", encoding="utf-8")
+                expected_markers[stage] = marker
+                specs.append(
+                    PromptSpec(
+                        stage=stage,
+                        template_id=current.template_id,
+                        version=previous_versions.get(stage, current.version),
+                        template_path=template_path,
+                        schema_path=current.schema_path,
+                        web_search=current.web_search,
+                    )
+                )
+            old_catalog = PromptCatalog(tuple(specs))
+            run_dir = root / "run"
+            run_dir.mkdir()
+            frozen = old_catalog.freeze(
+                run_dir,
+                route_id="useful",
+                contract_version="1",
+                prompt_policy_version="1",
+                stage_policy_version="1",
+            )
+
+            loaded = useful_prompt_catalog.load_frozen(
+                run_dir,
+                route_id="useful",
+                contract_version="1",
+                prompt_policy_version="1",
+                stage_policy_version="1",
+                manifest_sha256=frozen.manifest_sha256,
+            )
+
+            self.assertEqual(
+                {
+                    stage: loaded[stage].version
+                    for stage in previous_versions
+                },
+                previous_versions,
+            )
+            for stage, marker in expected_markers.items():
+                rendered = loaded.render(stage, (("CONTEXT", "exact input"),))
+                self.assertIn(marker, rendered.text)
+                self.assertEqual(
+                    rendered.template_version,
+                    previous_versions.get(
+                        stage,
+                        useful_prompt_catalog[stage].version,
+                    ),
+                )
+
     def test_frozen_catalog_rejects_resource_tampering(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
