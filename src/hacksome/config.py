@@ -27,7 +27,7 @@ class CodexConfig:
     termination_grace_seconds: float = 5.0
     doctor_timeout_seconds: float = 10.0
     subprocess_stream_limit_bytes: int = 1024 * 1024
-    sandbox: SandboxMode = "workspace-write"
+    sandbox: SandboxMode = "read-only"
     approval_policy: ApprovalPolicy = "never"
     model: str | None = None
     ignore_user_config: bool = True

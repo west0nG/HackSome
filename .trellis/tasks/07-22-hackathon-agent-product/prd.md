@@ -35,6 +35,7 @@ HackSome v1 不复制、也不修改 ClaudeHack 的 Build 工作流。
 ### R2 — Useful 路线的发现方式
 
 - Audience 扩散从职业、群体、角色或宽泛用户类型开始。
+- v1 最多扩散五个人群；这是第一版的硬上限，不再继续增加 Audience 分支。
 - 在 Research 之前，不得凭空编造非常具体的工作场景，例如“每周需要为不同学生准备练习题的初中老师”。
 - Research 需要从公开信息中寻找真实行为、痛点、现有解决方式和反面证据。
 - Research Prompt 应在合适时优先搜索 Reddit 和 GitHub，同时允许使用其他公开来源。
@@ -43,7 +44,7 @@ HackSome v1 不复制、也不修改 ClaudeHack 的 Build 工作流。
 - 每个 Problem Gateway 都必须是一个新的独立 Session。
 - Problem Gateway 判断该 Problem 是否真实、有证据、与赛题相关，并且对用户确实重要。
 - 每个通过 Gateway 的 Problem 会扇出到多个独立的 Idea Generator Session。
-- v1 默认每个 Problem 启动五个 Idea Generator，但数量可配置。
+- v1 默认每个 Problem 启动三个 Idea Generator，但数量可配置。
 - 每个生成出的 Idea 都必须进入一个新的独立 Red Team Session。
 - Red Team 只围绕两个核心问题进行绝对判断：
   1. 用户能否真实感受到产品价值？
@@ -52,7 +53,7 @@ HackSome v1 不复制、也不修改 ClaudeHack 的 Build 工作流。
 
 ### R3 — 动态候选数量
 
-- 系统不设置固定产出数量。
+- 除了第一版最多五个人群外，Problem、Idea 和最终 Idea Card 都不设置固定产出数量。
 - 不做 Top-K、相对排名、强制方向差异或语义去重。
 - 多个 Idea 即使相似，只要都能独立通过统一质量门槛，就全部保留。
 - 任何一个阶段都允许产出零个候选结果。
@@ -106,7 +107,6 @@ HackSome v1 不复制、也不修改 ClaudeHack 的 Build 工作流。
 - 产品是什么，以及它的核心机制；
 - 一条具体、完整的端到端 User Flow；
 - 用户在哪个时刻能够真实感受到价值；
-- AI 或赛题技术为什么真正参与了核心流程；
 - 可以现场跑通的 Demo 边界；
 - 重要假设、风险和支持证据；
 - 来源 Problem、Generator Session 和 Red Team 决策的 lineage。
@@ -118,8 +118,8 @@ HackSome v1 不复制、也不修改 ClaudeHack 的 Build 工作流。
 ## 验收标准
 
 1. 一个脚本化端到端测试能够经过全部七步，并且最终只发布 Problem Gateway 与 Red Team 都通过的 Idea Card。
-2. 当存在至少两个人群时，各人群 Research 会在全局并发上限内重叠执行，并且不会共享 Codex Session。
-3. 在默认配置下，一个通过的 Problem 会启动五个独立 Idea Generator；所有有效输出都保留，不受相似程度和数量影响。
+2. 人群扩散最多返回五个人群；当存在至少两个人群时，各人群 Research 会在全局并发上限内重叠执行，并且不会共享 Codex Session。
+3. 在默认配置下，一个通过的 Problem 会启动三个独立 Idea Generator；所有有效输出都保留，不受相似程度和数量影响。
 4. 测试能够证明下游 Prompt 包含被选中上游 Markdown 的完整原文，同时不要求 Agent 读取上下文文件。
 5. 测试能够证明只有 Research 开启 Web Search。
 6. 每个 Task 目录都包含完整 Prompt、请求与结果元数据、原始模型输出和 Codex 日志；Run 状态及决策记录能够定位每个任务和候选项。

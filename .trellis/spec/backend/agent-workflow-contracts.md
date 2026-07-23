@@ -26,7 +26,8 @@ this workflow.
 
 ## 2. Candidate policy
 
-- Candidate counts are dynamic.
+- Problem, Idea, and Idea Card counts are dynamic; Audience expansion is the
+  sole v1 exception and has a hard limit of five.
 - Empty output is valid at every fanout boundary.
 - Absolute gates may reject; relative ranking MUST NOT select.
 - There is no Top-K, quota, semantic deduplication, or forced diversity.
@@ -38,8 +39,9 @@ Defaults are configuration, not product invariants:
 
 ```text
 max_concurrency = 4
+max_audiences = 5
 researchers_per_audience = 1
-idea_generators_per_problem = 5
+idea_generators_per_problem = 3
 ```
 
 ## 3. Session isolation
@@ -124,7 +126,8 @@ Used by Challenge Parser and Researcher:
 
 The model MUST NOT assign IDs. The Hub assigns stable IDs after validating the
 ordered output. Audience descriptions remain broad; precise behavior belongs
-to Research.
+to Research. The Audience list MUST contain at most five items; both the output
+schema and Hub validation enforce this v1 limit.
 
 ### Candidate output
 
@@ -186,7 +189,6 @@ Product
 End-to-End User Flow
 Core Mechanism
 Felt Value
-Why This Technology
 Demo Scope
 Assumptions and Risks
 Evidence
@@ -215,8 +217,7 @@ It also rejects when:
   act;
 - the core mechanism assumes unavailable permissions, private data, or product
   authority;
-- the flow changes the passed Problem rather than solving it;
-- the claimed technology is decorative and does not participate materially.
+- the flow changes the passed Problem rather than solving it.
 
 The v1 Red Team has only `pass` and `reject`. It does not repair, rank, compare,
 or see sibling Ideas.
@@ -225,7 +226,7 @@ or see sibling Ideas.
 
 The Hub is the sole owner of canonical Session data. Before execution it writes:
 
-- task ID, role/stage, parent IDs, attempt policy, web-search policy;
+- task ID, role/stage, parent IDs, and web-search policy;
 - output schema name/hash;
 - exact rendered Prompt and Prompt/template hashes;
 - task request timestamps/status.
@@ -237,7 +238,7 @@ After execution it writes:
 - raw stdout/stderr JSONL and every raw last-message attempt;
 - parsed structured output;
 - published Markdown or review decision;
-- stable candidate lineage and content hashes.
+- stable candidate lineage and Prompt/request/result/output/artifact hashes.
 
 Run-level state is atomically replaced. Events and decisions are append-only
 JSONL with stable record IDs and idempotent conflict checking. The Hub MUST NOT
@@ -263,25 +264,89 @@ body and its review. An empty set of valid cards produces a valid empty index.
 - Persist every failure and leave the run inspectable.
 - Infrastructure retry uses the runner's exact-session resume behavior.
 - Never interpret a missing/failed task as an empty candidate list.
-- Resume skips only tasks with complete, schema-valid, hash-valid persisted
-  results. It schedules incomplete tasks with the same stable task IDs.
+- v1 has no Run-level `resume` command. Exact-session resume exists only inside
+  one `CodexRunner.run()` infrastructure retry.
 - Offline `validate` invokes no Codex process and checks the run from persisted
   state and hashes.
 
 Compatibility with pre-rewrite S0–S11 run directories is not required. Such
 runs remain historical files and can be inspected at their checkpoint.
 
-## 11. Required tests
+## 11. Executable signatures
+
+```python
+UsefulIdeaWorkflow.create(
+    challenge: str,
+    runs_dir: str | Path,
+    *,
+    settings: WorkflowSettings | None = None,
+    codex_config: CodexConfig | None = None,
+    run_id: str | None = None,
+    runner: Runner | None = None,
+) -> UsefulIdeaWorkflow
+
+await UsefulIdeaWorkflow.execute() -> Path  # Idea Card index
+
+render_prompt(
+    stage: str,
+    blocks: Sequence[tuple[str, str]],
+) -> RenderedPrompt
+
+inspect_run(run_dir: str | Path) -> dict[str, Any]
+validate_run(run_dir: str | Path) -> list[str]
+```
+
+CLI surface:
+
+```text
+hacksome doctor [--json]
+hacksome run (CHALLENGE | --prompt TEXT) [runtime/fanout options]
+hacksome status RUN_DIR [--json]
+hacksome validate RUN_DIR
+```
+
+There is deliberately no `hacksome resume` command in v1.
+
+## 12. Validation and error matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| Audience output has more than five items | schema rejection, or Hub fails closed before Research |
+| Candidate array is empty | successful task; downstream fanout is empty |
+| Problem/Idea Markdown misses a required H2 | task/output failure; never convert to reject |
+| Gateway or Red Team returns `reject` | successful task plus append-only decision; no downstream candidate |
+| Runner returns failed/timed-out result | persist Result/logs, mark Run failed, stop |
+| Runner raises after `begin_task` | persist a synthetic failed Result, mark Run failed |
+| Run timeout cancels an active task | terminate runner, persist cancellation, mark Run failed |
+| Prompt/request/result/output/artifact hash changes | offline validation returns a concrete mismatch |
+| Model returns zero final passes | publish a valid empty Idea Card index |
+
+## 13. Good, base, and bad cases
+
+- Good: two Audiences research concurrently; each later Prompt contains only
+  its selected persisted text; a passed Problem fans out to three Generators.
+- Base: multiple Generators return similar Ideas; every independently passing
+  Idea receives its own Red Team and becomes a card.
+- Base: zero Audiences, Problems, Ideas, or Red Team passes completes with an
+  empty index and no fabricated failure.
+- Bad: a rejected Problem reaches Idea generation, or a rejected Idea becomes a
+  card. Tests must fail on either routing error.
+- Bad: a downstream Prompt contains only `artifacts/...` paths instead of exact
+  upstream text.
+- Bad: an out-of-order parallel result uses the previous Problem's Gateway ref.
+  Source refs must be recomputed from the current Problem during publication.
+
+## 14. Required tests
 
 The default suite MUST be offline and cover:
 
 - Codex command, stdin Prompt, web-search policy, schema validation, JSONL
   capture, timeout cleanup, and exact-session infrastructure retry;
 - Prompt rendering with exact inline Markdown and no file-reading instruction;
-- broad-audience output and stable Hub-assigned IDs;
+- broad-audience output, the five-Audience hard limit, and stable Hub-assigned IDs;
 - Research parallelism and Research-only web search;
 - Problem Writer/Gateway separation and reject routing;
-- default five-way Idea Generator fanout and preservation of similar Ideas;
+- default three-way Idea Generator fanout and preservation of similar Ideas;
 - one fresh Red Team per Idea and rejection of non-delivered value;
 - deterministic Idea Card publication and empty outputs;
 - complete task trace persistence and offline integrity validation;
@@ -290,7 +355,40 @@ The default suite MUST be offline and cover:
 Run before completion:
 
 ```bash
-python3 -m compileall -q src tests
-python3 -m unittest discover -s tests -v
+.venv/bin/ruff check src tests
+.venv/bin/mypy src
+.venv/bin/python -m compileall -q src tests
+.venv/bin/python -m unittest discover -s tests -v
 git diff --check
+```
+
+## 15. Wrong vs correct
+
+### Wrong: use persistence as Agent transport
+
+```python
+prompt = "Read artifacts/problems/problem-001.md, then continue."
+```
+
+### Correct: Hub injects the exact selected bytes
+
+```python
+problem_text = hub.read_artifact(problem.artifact_ref)
+prompt = render_prompt("idea-generate", (("PASSED_PROBLEM", problem_text),))
+```
+
+### Wrong: reuse a loop-local Gateway ref after parallel fanout
+
+```python
+for problem, output in results:
+    publish_idea(source_refs=(problem.artifact_ref, gateway_ref))
+```
+
+### Correct: bind lineage from the current result owner
+
+```python
+for problem, output in results:
+    current_gateway_ref = problem.gateway_ref
+    assert current_gateway_ref is not None
+    publish_idea(source_refs=(problem.artifact_ref, current_gateway_ref))
 ```

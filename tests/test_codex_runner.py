@@ -217,7 +217,7 @@ class CodexRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("--search", argv)
         self.assertIn("--ask-for-approval", argv)
         self.assertIn("never", argv)
-        self.assertIn("workspace-write", argv)
+        self.assertIn("read-only", argv)
         disabled_features = [
             argv[index + 1]
             for index, value in enumerate(argv[:-1])

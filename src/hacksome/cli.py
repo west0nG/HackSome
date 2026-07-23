@@ -1,4 +1,4 @@
-"""Command-line interface for the local Useful Idea workflow."""
+"""Command-line interface for the local Idea-only workflow."""
 
 from __future__ import annotations
 
@@ -7,14 +7,13 @@ import asyncio
 import json
 import sys
 from collections.abc import Sequence
-from dataclasses import replace
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from hacksome.codex import CodexRunner
 from hacksome.config import CodexConfig
 from hacksome.models import CodexDoctorResult
-from hacksome.state import StateError, StateStore
+from hacksome.state import StateError
 from hacksome.workflow import (
     UsefulIdeaWorkflow,
     WorkflowError,
@@ -24,10 +23,6 @@ from hacksome.workflow import (
 )
 
 
-_DEFAULT_CODEX = CodexConfig()
-_DEFAULT_WORKFLOW = WorkflowSettings()
-
-
 def _positive_int(value: str) -> int:
     try:
         parsed = int(value)
@@ -35,6 +30,13 @@ def _positive_int(value: str) -> int:
         raise argparse.ArgumentTypeError("must be an integer") from exc
     if parsed < 1:
         raise argparse.ArgumentTypeError("must be at least 1")
+    return parsed
+
+
+def _audience_limit(value: str) -> int:
+    parsed = _positive_int(value)
+    if parsed > 5:
+        raise argparse.ArgumentTypeError("must not exceed 5 in v1")
     return parsed
 
 
@@ -58,141 +60,73 @@ def _positive_float(value: str) -> float:
     return parsed
 
 
-def _add_runtime_arguments(
-    parser: argparse.ArgumentParser,
-    *,
-    defaults: bool,
-) -> None:
-    parser.add_argument(
-        "--codex",
-        default=_DEFAULT_CODEX.executable if defaults else None,
-        metavar="PATH",
-        help="Codex CLI executable (default: codex)",
-    )
-    parser.add_argument(
-        "--model",
-        default=None,
-        help="Codex model override",
-    )
-    parser.add_argument(
-        "--max-concurrency",
-        type=_positive_int,
-        default=_DEFAULT_CODEX.max_concurrency if defaults else None,
-        metavar="N",
-        help="maximum simultaneous Codex sessions (default: 4)",
-    )
-    parser.add_argument(
-        "--infrastructure-retries",
-        type=_non_negative_int,
-        default=_DEFAULT_CODEX.infrastructure_retries if defaults else None,
-        metavar="N",
-        help="retries for transient Codex failures (default: 1)",
-    )
-
-
 def build_parser() -> argparse.ArgumentParser:
+    defaults = WorkflowSettings()
+    codex_defaults = CodexConfig()
     parser = argparse.ArgumentParser(
         prog="hacksome",
-        description="Find evidence-backed Useful hackathon ideas with local Codex sessions.",
+        description="Find evidence-backed Useful hackathon Ideas with local Codex sessions.",
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    commands = parser.add_subparsers(dest="command", required=True)
 
-    run_parser = subparsers.add_parser("run", help="start a new Useful Idea run")
-    run_parser.add_argument(
-        "challenge",
-        nargs="?",
-        type=Path,
-        help="UTF-8 file containing the hackathon prompt",
+    run = commands.add_parser("run", help="start a new Idea discovery run")
+    run.add_argument("challenge", nargs="?", type=Path, help="UTF-8 challenge file")
+    run.add_argument("--prompt", help="literal challenge instead of a file")
+    run.add_argument("--runs-dir", type=Path, default=Path("runs"))
+    run.add_argument("--run-id")
+    run.add_argument("--codex", default=codex_defaults.executable, metavar="PATH")
+    run.add_argument("--model")
+    run.add_argument(
+        "--max-concurrency",
+        type=_positive_int,
+        default=codex_defaults.max_concurrency,
     )
-    run_parser.add_argument(
-        "--prompt",
-        help="literal hackathon prompt instead of a file",
+    run.add_argument(
+        "--infrastructure-retries",
+        type=_non_negative_int,
+        default=codex_defaults.infrastructure_retries,
     )
-    run_parser.add_argument(
-        "--runs-dir",
-        type=Path,
-        default=Path("runs"),
-        help="parent directory for run outputs (default: ./runs)",
+    run.add_argument(
+        "--max-audiences", type=_audience_limit, default=defaults.max_audiences
     )
-    run_parser.add_argument(
-        "--run-id",
-        help="explicit run id; otherwise a timestamped id is generated",
-    )
-    _add_runtime_arguments(run_parser, defaults=True)
-    run_parser.add_argument(
-        "--task-timeout",
-        type=_positive_float,
-        default=_DEFAULT_WORKFLOW.task_timeout_seconds,
-        metavar="SECONDS",
-        help="deadline for one Codex task (default: 1200)",
-    )
-    run_parser.add_argument(
-        "--run-timeout",
-        type=_positive_float,
-        default=_DEFAULT_WORKFLOW.run_timeout_seconds,
-        metavar="SECONDS",
-        help="deadline for the whole workflow (default: 21600)",
-    )
-    run_parser.add_argument(
+    run.add_argument(
         "--researchers-per-audience",
         type=_positive_int,
-        default=_DEFAULT_WORKFLOW.researchers_per_audience,
-        metavar="N",
-        help="parallel problem researchers per audience (default: 3)",
+        default=defaults.researchers_per_audience,
     )
-    run_parser.add_argument(
-        "--problem-writers-per-audience",
-        type=_positive_int,
-        default=_DEFAULT_WORKFLOW.problem_writers_per_audience,
-        metavar="N",
-        help="parallel problem writers per audience (default: 3)",
-    )
-    run_parser.add_argument(
+    run.add_argument(
         "--idea-generators-per-problem",
         type=_positive_int,
-        default=_DEFAULT_WORKFLOW.idea_generators_per_problem,
-        metavar="N",
-        help="parallel idea generators per passed problem (default: 5)",
+        default=defaults.idea_generators_per_problem,
+    )
+    run.add_argument(
+        "--task-timeout",
+        type=_positive_float,
+        default=defaults.task_timeout_seconds,
+        metavar="SECONDS",
+    )
+    run.add_argument(
+        "--run-timeout",
+        type=_positive_float,
+        default=defaults.run_timeout_seconds,
+        metavar="SECONDS",
     )
 
-    resume_parser = subparsers.add_parser("resume", help="continue a saved run")
-    resume_parser.add_argument("run_dir", type=Path, help="existing run directory")
-    _add_runtime_arguments(resume_parser, defaults=False)
+    status = commands.add_parser("status", help="inspect a saved run")
+    status.add_argument("run_dir", type=Path)
+    status.add_argument("--json", action="store_true")
 
-    status_parser = subparsers.add_parser("status", help="inspect a saved run")
-    status_parser.add_argument("run_dir", type=Path, help="existing run directory")
-    status_parser.add_argument(
-        "--json",
-        action="store_true",
-        help="emit machine-readable JSON",
-    )
+    validate = commands.add_parser("validate", help="validate a saved run offline")
+    validate.add_argument("run_dir", type=Path)
 
-    validate_parser = subparsers.add_parser(
-        "validate", help="validate completed task outputs"
-    )
-    validate_parser.add_argument("run_dir", type=Path, help="existing run directory")
-
-    doctor_parser = subparsers.add_parser(
-        "doctor", help="check Codex CLI capabilities and login"
-    )
-    doctor_parser.add_argument(
-        "--codex",
-        default=_DEFAULT_CODEX.executable,
-        metavar="PATH",
-        help="Codex CLI executable (default: codex)",
-    )
-    doctor_parser.add_argument(
+    doctor = commands.add_parser("doctor", help="check Codex CLI and login")
+    doctor.add_argument("--codex", default=codex_defaults.executable, metavar="PATH")
+    doctor.add_argument(
         "--timeout",
         type=_positive_float,
-        default=_DEFAULT_CODEX.doctor_timeout_seconds,
-        metavar="SECONDS",
-        help="timeout for each diagnostic probe (default: 10)",
+        default=codex_defaults.doctor_timeout_seconds,
     )
-    doctor_parser.add_argument(
-        "--json",
-        action="store_true",
-        help="emit machine-readable JSON",
-    )
+    doctor.add_argument("--json", action="store_true")
     return parser
 
 
@@ -204,147 +138,56 @@ def _read_challenge(args: argparse.Namespace, parser: argparse.ArgumentParser) -
             parser.error("--prompt must not be empty")
         return args.prompt
     assert args.challenge is not None
-    try:
-        prompt = args.challenge.expanduser().read_text(encoding="utf-8")
-    except UnicodeDecodeError as exc:
-        raise ValueError(f"challenge file is not valid UTF-8: {args.challenge}") from exc
-    if not prompt.strip():
+    content = args.challenge.expanduser().read_text(encoding="utf-8")
+    if not content.strip():
         raise ValueError(f"challenge file is empty: {args.challenge}")
-    return prompt
+    return content
 
 
-def _workflow_settings(args: argparse.Namespace) -> WorkflowSettings:
-    return WorkflowSettings(
+def _run_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    challenge = _read_challenge(args, parser)
+    settings = WorkflowSettings(
+        max_audiences=args.max_audiences,
         researchers_per_audience=args.researchers_per_audience,
-        problem_writers_per_audience=args.problem_writers_per_audience,
         idea_generators_per_problem=args.idea_generators_per_problem,
         task_timeout_seconds=args.task_timeout,
         run_timeout_seconds=args.run_timeout,
     )
-
-
-def _codex_config(
-    args: argparse.Namespace,
-    *,
-    task_timeout: float,
-    base: CodexConfig | None = None,
-) -> CodexConfig:
-    base = base or _DEFAULT_CODEX
-    return replace(
-        base,
-        executable=args.codex or base.executable,
-        model=base.model if args.model is None else args.model,
-        max_concurrency=args.max_concurrency or base.max_concurrency,
-        default_timeout_seconds=task_timeout,
-        infrastructure_retries=(
-            base.infrastructure_retries
-            if args.infrastructure_retries is None
-            else args.infrastructure_retries
-        ),
+    config = CodexConfig(
+        executable=args.codex,
+        model=args.model,
+        max_concurrency=args.max_concurrency,
+        infrastructure_retries=args.infrastructure_retries,
+        default_timeout_seconds=args.task_timeout,
     )
-
-
-def _stored_settings(run_dir: Path) -> WorkflowSettings:
-    state = StateStore(run_dir.expanduser().resolve()).load()
-    raw = state.data.get("settings")
-    if raw is None:
-        return WorkflowSettings()
-    if not isinstance(raw, dict):
-        raise ValueError("saved workflow settings must be a JSON object")
-    return WorkflowSettings(**cast(dict[str, Any], raw))
-
-
-def _stored_codex_config(run_dir: Path) -> CodexConfig:
-    state = StateStore(run_dir.expanduser().resolve()).load()
-    raw = state.data.get("codex_config")
-    if raw is None:
-        return CodexConfig()
-    if not isinstance(raw, dict):
-        raise ValueError("saved Codex configuration must be a JSON object")
-    normalized: dict[str, Any] = dict(raw)
-    for key in ("disabled_features", "config_overrides"):
-        value = normalized.get(key)
-        if isinstance(value, list):
-            normalized[key] = tuple(value)
-    return CodexConfig(**normalized)
-
-
-def _run_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
-    prompt = _read_challenge(args, parser)
-    settings = _workflow_settings(args)
-    config = _codex_config(args, task_timeout=settings.task_timeout_seconds)
     workflow = UsefulIdeaWorkflow.create(
-        prompt,
+        challenge,
         args.runs_dir,
         settings=settings,
         codex_config=config,
         run_id=args.run_id,
     )
     print(f"Run directory: {workflow.run_dir}")
-    report = asyncio.run(workflow.execute())
-    print(f"Report: {report}")
+    index = asyncio.run(workflow.execute())
+    print(f"Idea Cards: {index}")
     return 0
-
-
-def _resume_command(args: argparse.Namespace) -> int:
-    has_override = any(
-        value is not None
-        for value in (
-            args.codex,
-            args.model,
-            args.max_concurrency,
-            args.infrastructure_retries,
-        )
-    )
-    if has_override:
-        settings = _stored_settings(args.run_dir)
-        config = _codex_config(
-            args,
-            task_timeout=settings.task_timeout_seconds,
-            base=_stored_codex_config(args.run_dir),
-        )
-        workflow = UsefulIdeaWorkflow(args.run_dir, codex_config=config)
-    else:
-        workflow = UsefulIdeaWorkflow(args.run_dir)
-    print(f"Resuming: {workflow.run_dir}")
-    report = asyncio.run(workflow.execute())
-    print(f"Report: {report}")
-    return 0
-
-
-def _status_payload(run_dir: Path) -> dict[str, Any]:
-    return inspect_run(run_dir)
 
 
 def _status_command(args: argparse.Namespace) -> int:
-    payload = _status_payload(args.run_dir)
+    payload = inspect_run(args.run_dir)
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
-
     print(f"Run: {payload['run_id']}")
     print(f"Status: {payload['status']}")
     print(f"Current stage: {payload.get('current_stage') or '-'}")
-    task_counts = payload.get("task_counts", {})
-    if isinstance(task_counts, dict) and task_counts:
-        rendered = ", ".join(
-            f"{status}={count}" for status, count in sorted(task_counts.items())
-        )
-    else:
-        rendered = "none"
+    counts = payload.get("task_counts", {})
+    rendered = ", ".join(
+        f"{status}={count}" for status, count in sorted(counts.items())
+    ) if isinstance(counts, dict) and counts else "none"
     print(f"Tasks: {rendered}")
-    print(f"Final ideas: {payload.get('final_idea_count', 0)}")
-    print(f"Eliminations: {payload.get('elimination_count', 0)}")
-    warnings = payload.get("warnings", [])
-    if isinstance(warnings, list) and warnings:
-        print("Warnings:")
-        for warning in warnings:
-            print(f"  - {warning}")
-    next_actions = payload.get("next_actions", [])
-    if isinstance(next_actions, list) and next_actions:
-        print("Next actions:")
-        for action in next_actions:
-            print(f"  - {action}")
+    print(f"Decisions: {payload.get('decision_count', 0)}")
+    print(f"Idea Cards: {payload.get('idea_card_count', 0)}")
     return 0
 
 
@@ -372,29 +215,19 @@ def _doctor_payload(result: CodexDoctorResult) -> dict[str, Any]:
 
 
 def _doctor_command(args: argparse.Namespace) -> int:
-    runner = CodexRunner(
-        CodexConfig(
-            executable=args.codex,
-            doctor_timeout_seconds=args.timeout,
-        )
+    result = asyncio.run(
+        CodexRunner(
+            CodexConfig(executable=args.codex, doctor_timeout_seconds=args.timeout)
+        ).doctor()
     )
-    result = asyncio.run(runner.doctor())
     payload = _doctor_payload(result)
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
     else:
         print(f"Codex: {'healthy' if result.healthy else 'unhealthy'}")
         print(f"Executable: {result.executable}")
-        print(f"Available: {'yes' if result.available else 'no'}")
         print(f"Version: {result.version or '-'}")
-        authenticated = "unknown"
-        if result.authenticated is not None:
-            authenticated = "yes" if result.authenticated else "no"
-        print(f"Authenticated: {authenticated}")
-        if result.capabilities:
-            print("Capabilities:")
-            for name, available in sorted(result.capabilities.items()):
-                print(f"  - {name}: {'yes' if available else 'no'}")
+        print(f"Authenticated: {result.authenticated}")
         if result.error:
             print(f"Error: {result.error}")
     return 0 if result.healthy else 1
@@ -406,8 +239,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "run":
             return _run_command(args, parser)
-        if args.command == "resume":
-            return _resume_command(args)
         if args.command == "status":
             return _status_command(args)
         if args.command == "validate":
