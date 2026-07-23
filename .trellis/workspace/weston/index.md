@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 2
+- **Total Sessions**: 3
 - **Last Active**: 2026-07-23
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~73 | Active |
+| `journal-1.md` | ~106 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 3 | 2026-07-23 | 强化 Idea 质量门并复跑米哈游 E2E | `3006256` | `main` |
 | 2 | 2026-07-23 | Idea workflow real E2E benchmarks | `1c86103` | `main` |
 | 1 | 2026-07-23 | Rebuild Idea-only workflow | `261094f` | `main` |
 <!-- @@@/auto:session-history -->
