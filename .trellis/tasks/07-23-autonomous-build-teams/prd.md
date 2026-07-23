@@ -10,6 +10,16 @@ BuildFactory 当前实现改造的长期自主 Build 系统。人只在 Idea Car
 系统不以产出唯一项目为目标。每张获准进入 Build 的 Idea Card 都可以形成一个
 独立 Team；所有成功项目全部保留，不排名、不合并，也不自动筛掉其他项目。
 
+## 子任务
+
+1. `07-23-single-team-runtime`：完成一个 Team 的 Lead → Worker → Verifier 顺序闭环、
+   项目状态、零 Skill loadout 和三角色 Prompt。
+2. `07-23-team-pool-operator`：在单 Team runtime 之上实现 handoff bootstrap、Team
+   registry、默认两个 active Team、排队与 operator pause/resume。
+
+Idea Review Gate UI 与 `src/hacksome/` 接线不属于这两个 Build 子任务，后续以独立
+integration task 完成。
+
 ## 已确认事实
 
 - BuildFactory 当前受版本控制的本地快照已经放入仓库的 `buildfactory/` 子目录。
@@ -49,13 +59,22 @@ BuildFactory 当前实现改造的长期自主 Build 系统。人只在 Idea Car
 - Idea Card 只负责初始化 Agent。Agent 可以修改、放弃或完全不继续原 Idea，并自主
   决定最终做什么。
 
+### R2.1 — Idea 与 Build 代码边界
+
+- Prompt → Idea Card 继续由现有 `src/hacksome/` 与对应 `tests/` 负责。
+- Idea Card → 长期 Build Team 的代码、Prompt、角色配置和测试全部放在
+  `buildfactory/` 下。
+- 两个部分并行开发时不得跨目录移动、重命名或覆盖对方的未提交文件。
+- 两边只通过明确的 handoff contract 传递 challenge、selected Idea Card、稳定 ID
+  和内容 hash；Build runtime 不直接依赖 Idea workflow 的内部 Python 对象或状态机。
+
 ### R3 — 无确定性语义工作流
 
 - Hub 不得通过固定 category、阶段 Schema 或状态机决定 Agent 应该做什么。
 - 系统不得冻结 Audience、Problem、价值时刻、产品机制、PRD、架构或交付顺序。
 - 系统不得要求 Agent 按 PRD → Build → Pitch 等预设阶段运行。
 - Agent 自己决定是否创建 Objective、PRD、Roadmap、决策文档或其他项目结构。
-- 确定性代码只负责机械边界，例如生命周期、能力授权、并发、持久化、恢复和
+- 确定性代码只负责机械边界，例如生命周期、并发、持久化、恢复和
   Worker/Verifier 仲裁；产品判断和下一步工作由常驻 Agent 决定。
 
 ### R4 — 长期运行语义
@@ -69,22 +88,60 @@ BuildFactory 当前实现改造的长期自主 Build 系统。人只在 Idea Car
 ### R5 — 职责分离
 
 - 每个 Team 只有一个常驻 Hackathon Lead；不保留 BuildFactory 的 Department 层。
+
+#### R5.1 — 固定 Prompt
+
+- Lead 的稳定 Prompt 必须固定表达：
+  1. 角色与定位：它是持续构建 Hackathon 项目的 Lead，并把项目当作真实产品；
+  2. 确定性方法：如何创建、查看和取消 Goal；
+  3. 操作范围：所有项目内容和长期状态都在 `/project`；
+  4. 运行契约：检查真实现状、形成判断并推动实质进展。
+- `/project`、reference、Goal 创建、Worker `submit_result` 和 Verifier
+  `submit_verdict` 都是角色基础协议，必须直接写入对应 Prompt，不通过 Skill 发现。
+- 第一版保留 BuildFactory 当前已验证的 `create_goal`、`list_my_goals`、`cancel_goal`、
+  `submit_result` 和 `submit_verdict` 方法名称，不为了替代 Skill 而重命名 Hub 协议。
+- 对应 Prompt 必须包含可直接执行的完整调用格式、参数语义、最小示例和 request-id
+  幂等要求；只列出 capability 名称不满足要求。
+
+#### R5.2 — 零 Skill
+
+- 第一版 Lead、Worker 和 Verifier 的角色 loadout 都必须是 `skills: []`，不配置任何 Skill。
+- 第一版能力只来自模型本身、角色 Prompt、项目文件和显式配置的 MCP/CLI 工具。
+- 保留通用 Skill 物化框架，以便后续扩展；但复制自 BuildFactory 的 Company Skill 不进入
+  任何角色 loadout，也不得被 Agent 自动发现。
+- 只有真实 Team 运行暴露出反复出现、可复用的具体方法缺口后，才设计并加入对应 Skill；
+  第一版不预设替代 Skill。
+
+#### R5.3 — Lead 与 Worker
+
 - Lead 负责长期判断、观察项目、维护自然项目状态、创建和取消 Goal。
-- Lead 每次 wake 的稳定行为直接写入 charter / dynamic prompt：检查项目的真实现状，
-  形成判断，推动实质进展，并执行当前角色可以做的事情。
-- 不创建或强制调用 `continue-project`、`think-strategically` 等常驻元 Skill。凡是几乎
-  每次 wake 都必须遵守的行为属于 Prompt 契约，不属于按需 Skill。
-- `send-goal` / Goal 创建同样不是 Skill。Lead prompt 必须直接说明如何把当前判断转成
-  一个或多个具体、可独立验证的 Goal，并直接暴露所需 Hub 方法或调用格式，避免 Lead
-  每次先发现和读取一个派活 Skill。
-- Skill 只承载在特定情境下需要展开的专门方法；Lead 根据当前真实问题自行选择是否使用。
 - Lead 可以使用 Playwright、CUA 及其他真实项目检查能力，亲自打开本地或线上产品、
   走 User Flow、观察 UI 和确认当前行为，而不是只读取文件或等待 Verifier 摘要。
-- Lead 与 Worker 可以共享大部分项目、研究、浏览器、设计和质量 Skill；两者的核心差异
-  是生命周期、上下文范围、Goal 权限和提交契约，而不是人为制造完全不同的能力目录。
-- Lead 不直接执行普通构建工作。
+- Lead 与 Worker 可以共享大部分项目、浏览器和执行工具；两者的核心差异是生命周期、
+  上下文范围、Goal 权限和提交契约，而不是人为制造不同的 Skill 目录。
+- Lead 和 Worker 原则上获得完整工具与项目写入权限。系统不通过 sandbox、mount 或
+  方法白名单确定性禁止 Lead 执行代码、设计、部署或其他工作。
+- Lead prompt 应引导它把适合委派或独立验收的工作拆成下一条 Goal，但这只是行为
+  引导，不是权限限制；Lead 仍可以自行判断并直接执行任何工作。
 - 一次性 Worker 负责代码、设计、研究、测试、部署、Pitch 等实际工作。
+- Worker 只看到完整 Goal intent；可选 `acceptance` 只进入 Verifier prompt。
+  Worker 必须知道的产品要求必须写入 intent，private acceptance 只用于独立检查。
+
+#### R5.4 — 顺序 Goal batch
+
+- 第一版每个 Team 使用顺序闭环。Lead 每次 wake 可以创建一个或多个 Goal，形成一个
+  有序 batch；单 Worker 按 FIFO 逐个执行，每个 Goal 都由一个 Verifier 独立验证。
+- 某个 Goal FAIL 时恢复原 Worker 继续同一 Goal；PASS 后直接进入 batch 中的下一条
+  Goal。只有整个 Goal batch 清空后，才重新唤醒 Lead 形成下一轮判断。
+- Hub 不限制一个 Team 只能存在一个非终态 Goal；限制的是同时执行的 Worker 数量。
+
+#### R5.5 — Verifier
+
 - 独立的一次性 Verifier 检查真实结果；FAIL 后恢复原 Worker 继续返工。
+- Verifier 是完整写入权限原则的例外：它可以使用文件读取、测试、Playwright、CUA
+  和核验所需的外部工具，但 canonical 项目文件与项目状态必须只读。
+- Verifier 不能修复、发布或代替 Worker 完成工作；它唯一的业务写入是为当前 review
+  提交一次 PASS/FAIL verdict。
 - Team 启动后的所有 Lead、Worker 和 Verifier 都是 Agent，不引入人类审批。
 
 ### R6 — 两层 Pool
@@ -96,25 +153,33 @@ BuildFactory 当前实现改造的长期自主 Build 系统。人只在 Idea Car
 - operator 暂停使用可恢复的 `paused` 控制状态：停止相关运行实例后保留 Repo、
   Team state、Goal ledger、session token 和排队工作；以后可以恢复同一个 Team。
 - `paused` 不是 Agent 的 idle、完成或失败状态。永久删除必须是独立且明确的破坏性操作。
-- 每个 active Team 默认最多拥有 5 个 Worker lifecycle 和 3 个并发 Verifier；
-  容量可以通过运行配置修改。
-- 每个 Team 使用自己的 Goal FIFO 和固定 Worker/Verifier Pool；Team 之间不争抢同一个
-  Worker FIFO。默认两个 Team 同时 active 时，全局理论上限是 10 个 Worker lifecycle
-  和 6 个并发 Verifier。
+- 第一版每个 active Team 的 `worker_max = 1`，不在一个 Team 内并行多个 Worker。
+- 每个 Team 使用自己的 Goal/Worker/Verifier 闭环；Team 之间不共享 Worker。
+- 多 Worker、并行 Goal 或更复杂的 Team 内调度属于后续扩展，不进入第一版。
 - 系统不得根据 Idea 或项目质量自动调整 Team 顺序、资源或存活状态。
 
 ## 验收标准
 
 - [ ] Review Gate 只有显式 operator 提交才能形成选择结果，任何隐式或超时路径都不会启动 Team。
 - [ ] 一次选择多张 Card 后，每张 Card 都形成隔离 Team，所有可用全局槽位并行启动。
+- [ ] Idea 代码与测试保持在现有 `src/hacksome/` 和 `tests/`，Build runtime 的新增或
+      修改保持在 `buildfactory/`，两边通过 handoff contract 集成。
 - [ ] 默认最多两个 Team active；其他 selected Team 排队，直到 operator 暂停一个 active Team。
 - [ ] 暂停并恢复 Team 后，Repo、Team state、Goal ledger 和可用 session 连续性仍然存在。
-- [ ] 每个 active Team 默认独立限制为 5 个 Worker lifecycle 和 3 个并发 Verifier，
-      修改一个 Team 的队列不会改变其他 Team 的 Goal FIFO。
+- [ ] 每个 active Team 同时最多运行一个 Worker；同一 Team 不会并行执行两个 Goal。
+- [ ] Worker 完成后必须经过独立 Verifier；FAIL 恢复原 Worker，PASS 后按 FIFO 执行
+      batch 中的下一条 Goal；队列清空才触发下一次 Lead 规划。
 - [ ] Team 状态只预置 `reference/challenge.md` 与
       `reference/initial-idea-card.md` 两份 Agent 可见输入。
 - [ ] Team 可以在不遵循 Idea Card、没有预设 PRD/Build/Pitch 阶段的情况下继续运行。
-- [ ] Lead、Worker 和 Verifier 的职责在运行时能力与写入权限上结构性分离。
+- [ ] Lead 和 Worker 通过独立 prompt、session 范围与 Goal 契约形成职责分工，
+      但 Lead 的工具或项目写入权限不会被确定性削减。
+- [ ] Verifier 能使用真实检查工具，但不能修改 canonical 项目文件或状态，也不能执行
+      修复和发布；每次 review 使用 fresh session。
+- [ ] Lead、Worker 和 Verifier 无需读取 Skill，就能从各自 prompt 理解 `/project`、
+      Goal 创建、结果提交和 verdict 提交等基础运行协议。
+- [ ] 第一版三个角色的物化结果均不包含任何 Skill；移除 Skill 不影响 Prompt、MCP、
+      Goal、Worker 或 Verifier 的正常运行。
 - [ ] Worker 结果由独立 Verifier 检查；FAIL 恢复原 Worker，而不是交给人审批。
 - [ ] 已经发布 Repo、Demo 或 Deck 的 Team 不会被系统自动标记完成或停止。
 - [ ] 多个成功 Team 的项目全部保留，系统不生成 winner、Top-K、合并结果或自动淘汰。

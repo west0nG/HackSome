@@ -18,7 +18,10 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "07-23-single-team-runtime",
+    "07-23-team-pool-operator"
+  ],
   "parent": null,
   "relatedFiles": [],
   "notes": "",

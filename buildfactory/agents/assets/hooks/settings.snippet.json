@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"[hook] PreToolUse fired $(date -u +%FT%TZ)\" >> /home/kasm-user/.claude/hook.log"
+          }
+        ]
+      }
+    ]
+  }
+}
