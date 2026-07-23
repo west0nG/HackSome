@@ -18,6 +18,11 @@ Lead 可以在一次 wake 中创建多条 Goal。系统依次执行
 FAIL 恢复同一 Worker、workspace、home 与 session。队列清空后向 Lead 投递一次
 稳定去重的 `goal_batch_drained` trigger。
 
+Lead 模型只允许在所有 Goal 均为 `done` / `cancelled`（或尚无 Goal）时启动。
+存在 `open / claimed / running / reported / verifying` Goal 时，resident loop 保留
+消息并跳过模型调用。Heartbeat 只检查空队列，不得在 Worker/Verifier 执行期间让
+Lead 继续扩充队列。
+
 ## 2. Project State
 
 唯一 Agent-facing 状态是：
@@ -59,7 +64,8 @@ Lead Prompt 是固定运行契约加一个动态 trigger，包含：
 - Hackathon Lead 定位和真实产品标准；
 - `/project` 与 initializer 语义；
 - `create_goal`、`list_my_goals`、`cancel_goal` 的完整 CLI；
-- 直接工作或分 Goal 都允许；
+- 保留完整工具权限，但职责上只检查、判断、设计并通过 Goal 委派实质工作；
+- 禁止 Lead 自己创建、修改、测试或部署产品产物，真实实施只由 Worker 承担；
 - 无 deadline、完成态、Objective、固定阶段或目录 taxonomy。
 
 Worker Prompt 包含 Goal intent、`/project` 权限与完整 `submit_result` 命令。
@@ -144,6 +150,7 @@ Active 环境变量：
 TEAM / TEAM_STATE_ROOT / TEAM_NETWORK / TEAM_MODE=1
 AGENT_KEY=lead / AGENT_KIND=lead
 AGENT_LOOP_MODULE=orchestration.lead_loop
+AGENT_HEARTBEAT_SECS=60（默认，可由 LEAD_HEARTBEAT_SECS 覆盖）
 WORKER_MAX=1 / VERIFIER_MAX=1
 ```
 
@@ -155,6 +162,9 @@ WORKER_MAX=1 / VERIFIER_MAX=1
   `company_hub.py`。
 - resident Lead 不覆盖镜像 entrypoint。`vm/docker/agent_startup.sh` 仍先启动
   computer-server、运行 loadout materialization，再执行 `AGENT_LOOP_MODULE`。
+- resident Lead 的 quiet heartbeat 默认 60 秒；Goal batch 清空继续使用即时
+  `goal_batch_drained` trigger，不等待 heartbeat。每次模型 wake 前必须通过
+  `list_my_goals` gate；任一非终态 Goal 都会抑制该次 wake。
 - Worker 动态容器挂载 `<project>:/project`；Verifier 挂载
   `<project>:/project:ro`。
 - Team 动态容器使用 `hacksome.team=<team>` label，必须与 `make down` 的过滤器一致。
@@ -179,6 +189,10 @@ WORKER_MAX=1 / VERIFIER_MAX=1
 
 - Good：Lead 一次创建两条 Goal；第二条保持 `open`，第一条 PASS 且 Worker stop 后
   才 claim 第二条。
+- Good：Worker 或 Verifier 执行期间 heartbeat 到期，resident Lead 只记录
+  `wake suppressed by gate`，不启动模型、不追加 Goal。
+- Good：Lead 读取 `/project` 形成判断，但只通过 Goal intent 推动产品修改；权限层
+  不禁止写入，Prompt 的职责分离禁止它取代 Worker。
 - Base：Worker 首次结果 FAIL；相同 worker id、home、workspace 与 session 收到
   `resume_worker`，修复后由新 Verifier review。
 - Good：Lead heartbeat 没有消息时仍检查真实项目并继续改进，但 Hub 不创建 idle 或
@@ -187,6 +201,10 @@ WORKER_MAX=1 / VERIFIER_MAX=1
   启动重新加载 Department/PyYAML 等 Company 产品依赖。
 - Bad：在 Compose 为 Lead 设置新 entrypoint；这会绕过 CUA computer-server 与
   materialization startup hook。
+- Bad：Lead 因为拥有 `/project` 读写挂载就直接搭 demo；完整权限是能力边界，不是
+  角色职责，实质产品工作必须形成 Goal 交给 Worker。
+- Bad：降低 heartbeat 后不检查 Goal 状态，导致 Lead 在 Worker 执行期间每分钟追加
+  新 Goal；heartbeat 必须先经过空队列 gate。
 
 ### 6. Tests Required
 

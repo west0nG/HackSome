@@ -55,6 +55,7 @@ def test_lead_has_project_and_account_but_no_control_plane_mounts():
     assert lead["environment"]["AGENT_KIND"] == "lead"
     assert lead["environment"]["AGENT_SPEC"].endswith("/agents/lead.yaml")
     assert lead["environment"]["AGENT_LOOP_MODULE"] == "orchestration.lead_loop"
+    assert lead["environment"]["AGENT_HEARTBEAT_SECS"] == "${LEAD_HEARTBEAT_SECS:-60}"
     assert "entrypoint" not in lead
 
 
