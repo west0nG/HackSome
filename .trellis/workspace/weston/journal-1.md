@@ -171,3 +171,201 @@ Adapted the local BuildFactory copy into an autonomous Lead-Worker-Verifier hack
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: AI Trader 赛题 E2E
+
+**Date**: 2026-07-23
+**Task**: AI Trader 赛题 E2E
+**Branch**: `main`
+
+### Summary
+
+使用 gpt-5.6-terra high、Generator v4 和 Red Team v3 完成 AI Trader Useful Idea E2E。漏斗为 23 Problems→1 pass→5 Ideas→2 pass；验证真实产品 Prompt 有效，同时确认 Problem Gateway 约 4% 的通过率过严。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8d18368` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 7: Calibrate Problem Gateway evidence bar
+
+**Date**: 2026-07-23
+**Task**: Calibrate Problem Gateway evidence bar
+**Branch**: `main`
+
+### Summary
+
+Adjusted Problem Gateway v3 to preserve strict rejection of invented users, workflows, root causes, and duty-only problems while allowing observed failures or repeated, costly, fragile workarounds without audit-grade proof; updated tests and workflow contract.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5a91757` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 8: Run StringStage Team E2E and gate Lead wakes
+
+**Date**: 2026-07-23
+**Task**: Run StringStage Team E2E and gate Lead wakes
+**Branch**: `main`
+
+### Summary
+
+Ran the supplied StringStage challenge through the real Lead-Worker-Verifier Docker runtime, fixed Lead role separation, set a 60-second heartbeat, added an empty-goal-queue wake gate, cancelled pre-gate queued Goals, and observed an independent PASS followed by immediate batch-drained Lead wake. Full regression: 421 passed.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f381022` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 9: AI Trader Gateway v3 E2E
+
+**Date**: 2026-07-23
+**Task**: AI Trader Gateway v3 E2E
+**Branch**: `main`
+
+### Summary
+
+Reran the full AI Trader challenge with gpt-5.6-terra/high and Gateway v3. The validated 138-session run produced 19 Problems, 14 Problem passes, 65 Ideas, and 36 Idea Cards. Manual review found Gateway v3 well calibrated and identified Generator convergence on evidence-ledger/audit-console product patterns as the next quality issue.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1744418` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 10: Generator product taste v5
+
+**Date**: 2026-07-23
+**Task**: Generator product taste v5
+**Branch**: `main`
+
+### Summary
+
+Updated Idea Generator v5 to require a specific, interesting product and reject information-artifact core products; updated Idea Red Team v4 to reject reports, cards, checklists, dashboards, ledgers, consoles, summaries, audit packages, and task lists as the primary value. Preserved unrestricted AI use and no forced diversity.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c1d9c74` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 11: AI Trader product taste E2E
+
+**Date**: 2026-07-23
+**Task**: AI Trader product taste E2E
+**Branch**: `main`
+
+### Summary
+
+Reran the full AI Trader workflow with Generator v5 and Red Team v4. The validated 144-session run produced 24 Problems, 18 Problem passes, 54 Ideas, and 32 Idea Cards. Information-artifact products dropped sharply; core actions shifted to compiling, rerunning, patching, blocking, synchronizing, reconciling, and controlling real workflow state. New naming convergence appeared around Gate/Replay/Patch/Relay/Witness.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `840ed88` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

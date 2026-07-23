@@ -6,6 +6,7 @@ import pytest
 import orchestration.verifier_runtime as verifier_runtime
 import orchestration.worker_manager as worker_manager
 import orchestration.team_store as team_store
+import orchestration.lead_loop as lead_loop
 from orchestration.lead_loop import build_lead_wake_prompt
 from orchestration.method_adapter import ActorContext
 from orchestration.runtime_store import StoreError, read_json
@@ -106,9 +107,14 @@ def test_role_prompts_are_self_contained_and_keep_acceptance_private():
     assert "create_goal" in lead
     assert "list_my_goals" in lead
     assert "cancel_goal" in lead
+    assert "do not" in lead.lower()
+    assert "implement product work yourself" in lead
+    assert "delegate the next substantive work" in lead
+    assert "using direct work" not in lead
     assert "--request-id 'goal-<stable-purpose-id>'" in lead
     assert "no deadline, completion state" in lead
     assert "CURRENT OBJECTIVE" not in lead
+    assert lead_loop.DEFAULT_LEAD_HEARTBEAT_SECS == 60
 
     launch = WorkerLaunch(
         goal_id="goal-1",
@@ -147,6 +153,26 @@ def test_role_prompts_are_self_contained_and_keep_acceptance_private():
     assert "Canonical /project is mounted read-only" in verifier
     assert "submit_verdict" in verifier
     assert "--request-id 'verdict-review-1'" in verifier
+
+
+def test_lead_goal_queue_gate_only_opens_when_every_goal_is_terminal():
+    class Client:
+        def __init__(self, statuses):
+            self.statuses = statuses
+
+        def call(self, method):
+            assert method == "list_my_goals"
+            return {
+                "goals": [
+                    {"id": f"goal-{index}", "status": status}
+                    for index, status in enumerate(self.statuses)
+                ]
+            }
+
+    assert lead_loop.goal_queue_empty(Client([]))
+    assert lead_loop.goal_queue_empty(Client(["done", "cancelled"]))
+    for active in ("open", "claimed", "running", "reported", "verifying"):
+        assert not lead_loop.goal_queue_empty(Client(["done", active]))
 
 
 def test_two_goal_fifo_fail_resume_pass_and_batch_drained(tmp_path):

@@ -61,7 +61,14 @@ class PromptSpec:
 class PromptCatalog:
     """An immutable, ordered mapping of workflow stages to prompt resources."""
 
-    def __init__(self, specs: Sequence[PromptSpec]) -> None:
+    def __init__(
+        self,
+        specs: Sequence[PromptSpec],
+        *,
+        compatible_template_versions: (
+            Mapping[str, Sequence[str]] | None
+        ) = None,
+    ) -> None:
         by_stage: dict[str, PromptSpec] = {}
         for spec in specs:
             if not isinstance(spec.stage, str) or not _STAGE_NAME.fullmatch(spec.stage):
@@ -77,7 +84,34 @@ class PromptCatalog:
             by_stage[spec.stage] = spec
         if not by_stage:
             raise ValueError("prompt catalog must not be empty")
+        compatible: dict[str, frozenset[str]] = {
+            stage: frozenset({spec.version})
+            for stage, spec in by_stage.items()
+        }
+        for stage, versions in (compatible_template_versions or {}).items():
+            if stage not in by_stage:
+                raise ValueError(
+                    f"compatible template versions name unknown stage: {stage}"
+                )
+            if isinstance(versions, (str, bytes)):
+                raise ValueError(
+                    f"compatible template versions must be a sequence for {stage}"
+                )
+            values = tuple(versions)
+            if not all(
+                isinstance(version, str) and _VERSION.fullmatch(version)
+                for version in values
+            ):
+                raise ValueError(
+                    f"invalid compatible template version for {stage}"
+                )
+            compatible[stage] = frozenset(
+                {by_stage[stage].version, *values}
+            )
         self._specs: Mapping[str, PromptSpec] = MappingProxyType(by_stage)
+        self._compatible_template_versions: Mapping[
+            str, frozenset[str]
+        ] = MappingProxyType(compatible)
 
     def __contains__(self, stage: object) -> bool:
         return stage in self._specs
@@ -252,7 +286,14 @@ class PromptCatalog:
                 raise PromptResourceError(
                     f"unsupported template id for stage {expected_spec.stage}"
                 )
-            if raw.get("template_version") != expected_spec.version:
+            frozen_version = raw.get("template_version")
+            if (
+                not isinstance(frozen_version, str)
+                or frozen_version
+                not in self._compatible_template_versions[
+                    expected_spec.stage
+                ]
+            ):
                 raise PromptResourceError(
                     f"unsupported template version for stage {expected_spec.stage}"
                 )
@@ -274,7 +315,7 @@ class PromptCatalog:
                 PromptSpec(
                     stage=expected_spec.stage,
                     template_id=expected_spec.template_id,
-                    version=expected_spec.version,
+                    version=frozen_version,
                     template_path=template_path,
                     schema_path=schema_path,
                     web_search=expected_spec.web_search,
@@ -410,25 +451,30 @@ useful_prompt_catalog = PromptCatalog(
         PromptSpec(
             "problem-gateway",
             "hacksome.idea.problem-gateway",
-            "2",
+            "3",
             _PROMPT_DIR / "problem-gateway.md",
             _SCHEMA_DIR / "review.schema.json",
         ),
         PromptSpec(
             "idea-generate",
             "hacksome.idea.idea-generate",
-            "4",
+            "5",
             _PROMPT_DIR / "idea-generate.md",
             _SCHEMA_DIR / "candidates.schema.json",
         ),
         PromptSpec(
             "idea-red-team",
             "hacksome.idea.idea-red-team",
-            "3",
+            "4",
             _PROMPT_DIR / "idea-red-team.md",
             _SCHEMA_DIR / "review.schema.json",
         ),
-    )
+    ),
+    compatible_template_versions={
+        "problem-gateway": ("2",),
+        "idea-generate": ("4",),
+        "idea-red-team": ("3",),
+    },
 )
 
 _SCHEMA_NAMES = {

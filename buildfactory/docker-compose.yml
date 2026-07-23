@@ -92,7 +92,7 @@ services:
       AGENT_SPEC: /opt/foundagent-orch/agents/lead.yaml
       AGENT_CHARTER: /opt/foundagent-orch/agents/assets/lead-charter.md
       AGENT_LOOP_MODULE: orchestration.lead_loop
-      AGENT_HEARTBEAT_SECS: ${LEAD_HEARTBEAT_SECS:-900}
+      AGENT_HEARTBEAT_SECS: ${LEAD_HEARTBEAT_SECS:-60}
       AGENT_CLAUDE_TIMEOUT: ${AGENT_CLAUDE_TIMEOUT:-3600}
       HUB_URL: http://hub:8910
       CLAUDE_CONFIG_DIR: /home/kasm-user/.claude

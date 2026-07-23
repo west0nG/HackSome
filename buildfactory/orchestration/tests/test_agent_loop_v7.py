@@ -225,6 +225,33 @@ def test_remote_completion_owns_ack_and_hub_context_is_injected(tmp_path, monkey
     assert "create_goal" in prompts[0]
 
 
+def test_wake_gate_suppresses_model_until_it_allows_wake(tmp_path, monkeypatch):
+    inbox = ReliableInbox([])
+    gate_results = iter((False, True))
+    wake_calls = []
+
+    def fake_wake(*args, **kwargs):
+        wake_calls.append(kwargs["trigger"])
+        raise StopLoop
+
+    monkeypatch.setattr(agent_loop, "wake", fake_wake)
+    monkeypatch.setattr(agent_loop.time, "sleep", lambda _: None)
+
+    with pytest.raises(StopLoop):
+        agent_loop.agent_loop(
+            key="lead",
+            session_file=tmp_path / "session",
+            heartbeat=60,
+            inbox=inbox,
+            context_loader=lambda: {},
+            prompt_builder=lambda *_: "lead prompt",
+            wake_gate=lambda _event, _context: next(gate_results),
+        )
+
+    assert inbox.waits == 2
+    assert wake_calls == ["heartbeat"]
+
+
 def test_resident_loop_has_no_v6_prompt_or_direct_state_fallbacks():
     assert not hasattr(agent_loop, "build_wake_prompt")
     assert not hasattr(agent_loop, "_read_objective")

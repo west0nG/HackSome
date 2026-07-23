@@ -483,6 +483,7 @@ def agent_loop(*, key: str, session_file: str | os.PathLike, heartbeat: float,
                wake_completed: Callable[[dict], None] | None = None,
                context_loader: Callable[[], dict],
                prompt_builder: Callable[[dict | None, str, str, str], str] | None = None,
+               wake_gate: Callable[[dict | None, dict], bool] | None = None,
                completion_owns_ack: bool = False) -> None:
     """Run one resident actor against the V7 Hub boundary.
 
@@ -518,12 +519,24 @@ def agent_loop(*, key: str, session_file: str | os.PathLike, heartbeat: float,
                 objective_reviews_in_flight = []
                 notes = None
                 wake_capabilities = ()
+            wake_allowed = wake_gate(event, context) if wake_gate is not None else True
+            if not isinstance(wake_allowed, bool):
+                raise ValueError("wake gate must return a boolean")
         except Exception as exc:  # noqa: BLE001 — retain FIFO head and retry
             print(
                 f"[agent_loop:{key}] context load failed ({exc!r}); retaining wake",
                 flush=True,
             )
             time.sleep(max(0.0, retry_backoff))
+            continue
+        if not wake_allowed:
+            print(
+                f"[agent_loop:{key}] wake suppressed by gate; "
+                f"message={event.get('id') if event else '(heartbeat)'} retained",
+                flush=True,
+            )
+            if event is not None:
+                time.sleep(max(0.0, heartbeat))
             continue
         trigger = "event" if event is not None else "heartbeat"
         wake_id = f"wake-{uuid.uuid4().hex}"

@@ -82,6 +82,12 @@ Persistence and transport are separate concerns:
   manifests.
 - Agents return schema-constrained JSON; the Hub publishes Markdown fields.
 
+v2 run 创建时冻结完整 route Prompt/Schema catalog。Package 升级后，新 run
+使用当前 Prompt 版本；历史 run 只能加载代码显式 allowlist 的旧版本，并继续
+严格校验 stage 顺序、template ID、web policy、路径与文件 hash。Loader 必须
+保留 manifest 中的旧 `template_version`，不能用当前版本标签解释旧字节；
+未列入 allowlist 的版本 fail closed。
+
 Every rendered Prompt MUST be saved before model invocation and MUST contain
 named data blocks with unambiguous boundaries, for example:
 
@@ -114,7 +120,10 @@ retains the Gateway artifact for process lineage. Its own Prompt supplies only
 a high-level product identity: design for ongoing real-world use, ensure the
 product remains meaningful after a presentation ends, and treat presentation
 or submission requirements as delivery constraints rather than the reason for
-the product.
+the product. It also requires a specific, thoughtful, interesting product with
+a clear point of view and forbids information artifacts from being the core
+product. These product-generation requirements are not the downstream Red Team
+checklist.
 
 ## 5. Structured-output boundary
 
@@ -200,9 +209,19 @@ Research MUST reconstruct concrete situations instead of collecting facts by
 source. Important claims identify the actor, setting, constraint, failure or
 compromise, current response, and remaining consequence. They also distinguish
 direct observation, strong inference, and unknown internal detail. A Problem
-Gateway acts as a skeptical Red Team: a polished card does not compensate for a
-missing trigger, unsupported internal workflow, weak consequence, or critical
-unknown.
+Gateway acts as a skeptical Red Team: a polished card does not compensate for
+an invented user or task, an unsupported internal workflow, a suspected root
+cause presented as fact, or a normal job responsibility with no observed
+failure, compromise, or burdensome workaround.
+
+The Gateway is an opportunity-quality gate, not an audit or courtroom standard.
+A Problem MAY pass when Research establishes a concrete user and task plus
+either an observed failure or a repeated, costly, or fragile workaround.
+Downstream consequences MAY be clearly labeled reasonable inferences.
+Unquantified loss, unknown segment-wide prevalence, the absence of a documented
+final disaster, or the existence of a workaround MUST NOT independently cause
+rejection. The review preserves those uncertainties while routing the candidate
+according to whether its core situation is real.
 
 ### Idea
 
@@ -224,6 +243,17 @@ downstream Red Team checklist. `First Real Version` describes the first product
 that an actual user can use; it is not a license to substitute a staged demo,
 fake data, or mock integrations for the core outcome.
 
+The Generator MUST discard any candidate whose primary value is generating,
+organizing, or displaying reports, cards, checklists, dashboards, ledgers,
+consoles, summaries, audit packages, task lists, or renamed equivalents.
+Information artifacts MAY appear only as secondary outputs of a product that
+actually completes work or changes something in the user's workflow. The
+Generator also seeks a concrete product that the intended user would find
+interesting and worth trying, preferring one strong product idea and distinctive
+core experience over a bundle of familiar AI features. This requirement MUST
+NOT discourage AI use, require the product to work without AI, demand an
+Agent-native mechanism, or force direction diversity.
+
 ### Reviews
 
 Review Markdown explains the decision against absolute criteria. The stored
@@ -243,8 +273,11 @@ It rejects when:
   rather than authentic user-provided or legitimately accessible inputs;
 - the core mechanism assumes unavailable permissions, private data,
   integrations, or product authority;
-- the product stops at a dashboard, score, report, recommendation, ticket, or
-  generated artifact while the value requires an uncontrolled actor to act;
+- the product's primary value is generating, organizing, or displaying a
+  report, card, checklist, dashboard, ledger, console, summary, audit package,
+  task list, score, recommendation, ticket, or another information artifact,
+  even when that artifact is accurate, useful, auditable, or part of the user's
+  job;
 - the first real version is merely a staged demonstration with no credible
   repeated use after the event;
 - the flow changes, avoids, or restates the passed Problem instead of solving

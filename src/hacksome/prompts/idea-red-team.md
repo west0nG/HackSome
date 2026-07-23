@@ -17,8 +17,11 @@ reject when its core flow:
 - only works with fake, mock, or hand-curated data rather than data a real user
   can provide or the product can legitimately access;
 - requires unavailable private data, permissions, integrations, or authority;
-- stops at a dashboard, score, report, recommendation, ticket, or generated
-  artifact while the claimed value depends on an uncontrolled person acting;
+- has primary value in generating, organizing, or displaying reports, cards,
+  checklists, dashboards, ledgers, consoles, summaries, audit packages, task
+  lists, scores, recommendations, tickets, or other information artifacts.
+  These may be secondary outputs, but they are not a qualifying core product
+  even when they are accurate, useful, auditable, or part of the user's job;
 - has no credible repeated use after the event;
 - changes, avoids, or merely restates the passed Problem.
 

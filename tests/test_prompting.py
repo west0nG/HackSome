@@ -40,7 +40,9 @@ class PromptingTests(unittest.TestCase):
             useful_prompt_catalog["idea-generate"].template_id,
             "hacksome.idea.idea-generate",
         )
-        self.assertEqual(useful_prompt_catalog["idea-generate"].version, "4")
+        self.assertEqual(useful_prompt_catalog["problem-gateway"].version, "3")
+        self.assertEqual(useful_prompt_catalog["idea-generate"].version, "5")
+        self.assertEqual(useful_prompt_catalog["idea-red-team"].version, "4")
         self.assertEqual(
             useful_prompt_catalog["idea-generate"].schema_path,
             schema_path("idea-generate"),
@@ -157,6 +159,91 @@ class PromptingTests(unittest.TestCase):
                 loaded["stage-one"].template_path,
                 run_dir.resolve() / "resources" / "prompts" / "stage-one.md",
             )
+
+    def test_catalog_can_load_explicitly_allowlisted_frozen_prompt_version(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old_template = root / "old.md"
+            current_template = root / "current.md"
+            schema = root / "schema.json"
+            old_template.write_text("# Original v1 prompt\n", encoding="utf-8")
+            current_template.write_text("# Current v2 prompt\n", encoding="utf-8")
+            schema.write_text('{"type":"object"}\n', encoding="utf-8")
+            old_catalog = PromptCatalog(
+                (
+                    PromptSpec(
+                        "stage-one",
+                        "example.stage-one",
+                        "1",
+                        old_template,
+                        schema,
+                    ),
+                )
+            )
+            run_dir = root / "run"
+            run_dir.mkdir()
+            frozen = old_catalog.freeze(
+                run_dir,
+                route_id="example",
+                contract_version="1",
+                prompt_policy_version="1",
+                stage_policy_version="1",
+            )
+            current_catalog = PromptCatalog(
+                (
+                    PromptSpec(
+                        "stage-one",
+                        "example.stage-one",
+                        "2",
+                        current_template,
+                        schema,
+                    ),
+                ),
+                compatible_template_versions={"stage-one": ("1",)},
+            )
+
+            loaded = current_catalog.load_frozen(
+                run_dir,
+                route_id="example",
+                contract_version="1",
+                prompt_policy_version="1",
+                stage_policy_version="1",
+                manifest_sha256=frozen.manifest_sha256,
+            )
+            rendered = loaded.render(
+                "stage-one",
+                (("CONTEXT", "exact input"),),
+            )
+
+            self.assertEqual(rendered.template_version, "1")
+            self.assertIn("# Original v1 prompt", rendered.text)
+            self.assertNotIn("# Current v2 prompt", rendered.text)
+
+            unsupported = PromptCatalog(
+                (
+                    PromptSpec(
+                        "stage-one",
+                        "example.stage-one",
+                        "2",
+                        current_template,
+                        schema,
+                    ),
+                )
+            )
+            with self.assertRaisesRegex(
+                PromptResourceError,
+                "unsupported template version",
+            ):
+                unsupported.load_frozen(
+                    run_dir,
+                    route_id="example",
+                    contract_version="1",
+                    prompt_policy_version="1",
+                    stage_policy_version="1",
+                    manifest_sha256=frozen.manifest_sha256,
+                )
 
     def test_frozen_catalog_rejects_resource_tampering(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -282,7 +369,7 @@ class PromptingTests(unittest.TestCase):
                     rendered.text,
                 )
                 self.assertNotIn("`title`", rendered.text)
-                expected_version = "2" if stage == "problem-write" else "4"
+                expected_version = "2" if stage == "problem-write" else "5"
                 self.assertEqual(rendered.template_version, expected_version)
 
     def test_research_reconstructs_situations_instead_of_collecting_facts(self) -> None:
@@ -296,22 +383,29 @@ class PromptingTests(unittest.TestCase):
         self.assertIn("strong inference", rendered.text)
         self.assertIn("unknown internal detail", rendered.text)
 
-    def test_problem_gateway_is_skeptical_and_fails_closed(self) -> None:
+    def test_problem_gateway_rejects_invention_without_demanding_audit_proof(
+        self,
+    ) -> None:
         rendered = render_prompt(
             "problem-gateway",
             (("PROBLEM", "# Problem\n\nAn asserted pain"),),
         )
-        self.assertEqual(rendered.template_version, "2")
-        self.assertIn("burden of proof is on", rendered.text)
+        self.assertEqual(rendered.template_version, "3")
         self.assertIn("invented internal workflow", rendered.text)
-        self.assertIn("critical link", rendered.text)
+        self.assertIn("suspected root cause", rendered.text)
+        self.assertIn("normal job\nresponsibility", rendered.text)
+        self.assertIn("repeated, costly, or fragile workaround", rendered.text)
+        self.assertIn("Do not reject solely because the loss is not quantified", rendered.text)
+        self.assertIn("prevalence across the\nwhole segment is unknown", rendered.text)
+        self.assertIn("its existence does not prove the need is already", rendered.text)
+        self.assertNotIn("burden of proof is on", rendered.text)
 
     def test_generator_does_not_receive_the_red_team_checklist(self) -> None:
         rendered = render_prompt(
             "idea-generate",
             (("PASSED_PROBLEM", "# Problem\n\nReal"),),
         )
-        self.assertEqual(rendered.template_version, "4")
+        self.assertEqual(rendered.template_version, "5")
         self.assertNotIn("Felt Value", rendered.text)
         self.assertNotIn("End-to-End User Flow", rendered.text)
         self.assertNotIn("Demo Scope", rendered.text)
@@ -323,15 +417,42 @@ class PromptingTests(unittest.TestCase):
         self.assertNotIn("uncontrolled person", rendered.text)
         self.assertNotIn("unavailable private data", rendered.text)
 
-    def test_red_team_rejects_demo_only_products(self) -> None:
+    def test_generator_requires_an_interesting_product_not_an_information_artifact(
+        self,
+    ) -> None:
+        rendered = render_prompt(
+            "idea-generate",
+            (("PASSED_PROBLEM", "# Problem\n\nReal"),),
+        )
+        self.assertEqual(rendered.template_version, "5")
+        self.assertIn("creative in the product design", rendered.text)
+        self.assertIn("interesting product. I would like to try it", rendered.text)
+        self.assertIn("clear point of view and a distinctive core experience", rendered.text)
+        self.assertIn(
+            "primary value is generating, organizing, or\n"
+            "displaying reports, cards, checklists, dashboards, ledgers, consoles",
+            rendered.text,
+        )
+        self.assertIn("only as secondary outputs", rendered.text)
+        self.assertIn("does not make it a product", rendered.text)
+        self.assertNotIn("Remove the words", rendered.text)
+        self.assertNotIn("Agent-native", rendered.text)
+        self.assertNotIn("novelty", rendered.text)
+        self.assertNotIn("surprise", rendered.text)
+
+    def test_red_team_rejects_demo_only_and_information_only_products(self) -> None:
         rendered = render_prompt(
             "idea-red-team",
             (("IDEA", "# Idea\n\nA polished concept"),),
         )
-        self.assertEqual(rendered.template_version, "3")
+        self.assertEqual(rendered.template_version, "4")
         self.assertIn("fake, mock, or hand-curated data", rendered.text)
         self.assertIn("possible to demonstrate", rendered.text)
         self.assertIn("product on authentic inputs", rendered.text)
+        self.assertIn("primary value in generating, organizing, or displaying", rendered.text)
+        self.assertIn("reports, cards,\n  checklists, dashboards, ledgers", rendered.text)
+        self.assertIn("not a qualifying core product", rendered.text)
+        self.assertIn("accurate, useful, auditable, or part of the user's job", rendered.text)
         lowered = rendered.text.lower()
         self.assertNotIn("hackathon", lowered)
         self.assertNotIn("judge", lowered)

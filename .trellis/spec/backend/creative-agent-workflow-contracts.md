@@ -119,6 +119,9 @@ Creative 只能使用 v2 Hub state，并持久化：
 
 `open()` 只能从这些 hash-bound 数据恢复 settings、Codex config、Prompt
 catalog 与 Memory Snapshot，不能采用当前 package 默认值替换旧 run 的冻结值。
+冻结 Prompt 的版本只能是当前版本或代码显式 allowlist 的历史版本；加载后
+继续报告 manifest 中的真实版本，未知版本、ID、web policy、路径或 hash 漂移
+一律 fail closed。
 
 ### 3.2 Agent 隔离与循环上限
 

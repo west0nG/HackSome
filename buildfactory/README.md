@@ -19,11 +19,13 @@ resident Lead
 - Lead 是唯一常驻 Agent，长期保留 session。
 - Team 同时最多一个 Worker、一个 Verifier。
 - Lead 可以一次创建任意数量 Goal；系统按创建顺序执行。
+- 只要存在非终态 Goal，Lead 模型不会运行；整个 batch 清空后才再次启动 Lead。
 - Verifier PASS 后停止当前 Worker，再启动下一 Goal。
 - Verifier FAIL 后恢复同一个 Worker、workspace、home 和 session。
 - 没有 deadline、`failed_time`、Objective、Department、Notes、mail、自动完成态
   或业务 idle 状态。
-- quiet heartbeat 只表示再次唤醒 Lead 继续项目。
+- quiet heartbeat 默认每 60 秒检查一次；只有 Goal 队列为空时才唤醒 Lead。
+  batch 清空仍会通过 `goal_batch_drained` 立即唤醒。
 - Lead 与 Worker 对 `/project` 完整读写；Verifier 的 canonical `/project` 只读。
 - 三个 active AgentSpec 都是 `skills: []`。Skill 框架保留，但第一版不物化 Skill。
 
