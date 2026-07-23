@@ -237,3 +237,36 @@ Adjusted Problem Gateway v3 to preserve strict rejection of invented users, work
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: Run StringStage Team E2E and gate Lead wakes
+
+**Date**: 2026-07-23
+**Task**: Run StringStage Team E2E and gate Lead wakes
+**Branch**: `main`
+
+### Summary
+
+Ran the supplied StringStage challenge through the real Lead-Worker-Verifier Docker runtime, fixed Lead role separation, set a 60-second heartbeat, added an empty-goal-queue wake gate, cancelled pre-gate queued Goals, and observed an independent PASS followed by immediate batch-drained Lead wake. Full regression: 421 passed.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f381022` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
