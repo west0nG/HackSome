@@ -68,15 +68,22 @@ class PromptingTests(unittest.TestCase):
         self.assertIn("strong inference", rendered.text)
         self.assertIn("unknown internal detail", rendered.text)
 
-    def test_problem_gateway_is_skeptical_and_fails_closed(self) -> None:
+    def test_problem_gateway_rejects_invention_without_demanding_audit_proof(
+        self,
+    ) -> None:
         rendered = render_prompt(
             "problem-gateway",
             (("PROBLEM", "# Problem\n\nAn asserted pain"),),
         )
-        self.assertEqual(rendered.template_version, "2")
-        self.assertIn("burden of proof is on", rendered.text)
+        self.assertEqual(rendered.template_version, "3")
         self.assertIn("invented internal workflow", rendered.text)
-        self.assertIn("critical link", rendered.text)
+        self.assertIn("suspected root cause", rendered.text)
+        self.assertIn("normal job\nresponsibility", rendered.text)
+        self.assertIn("repeated, costly, or fragile workaround", rendered.text)
+        self.assertIn("Do not reject solely because the loss is not quantified", rendered.text)
+        self.assertIn("prevalence across the\nwhole segment is unknown", rendered.text)
+        self.assertIn("its existence does not prove the need is already", rendered.text)
+        self.assertNotIn("burden of proof is on", rendered.text)
 
     def test_generator_does_not_receive_the_red_team_checklist(self) -> None:
         rendered = render_prompt(

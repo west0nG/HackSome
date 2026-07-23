@@ -199,9 +199,19 @@ Research MUST reconstruct concrete situations instead of collecting facts by
 source. Important claims identify the actor, setting, constraint, failure or
 compromise, current response, and remaining consequence. They also distinguish
 direct observation, strong inference, and unknown internal detail. A Problem
-Gateway acts as a skeptical Red Team: a polished card does not compensate for a
-missing trigger, unsupported internal workflow, weak consequence, or critical
-unknown.
+Gateway acts as a skeptical Red Team: a polished card does not compensate for
+an invented user or task, an unsupported internal workflow, a suspected root
+cause presented as fact, or a normal job responsibility with no observed
+failure, compromise, or burdensome workaround.
+
+The Gateway is an opportunity-quality gate, not an audit or courtroom standard.
+A Problem MAY pass when Research establishes a concrete user and task plus
+either an observed failure or a repeated, costly, or fragile workaround.
+Downstream consequences MAY be clearly labeled reasonable inferences.
+Unquantified loss, unknown segment-wide prevalence, the absence of a documented
+final disaster, or the existence of a workaround MUST NOT independently cause
+rejection. The review preserves those uncertainties while routing the candidate
+according to whether its core situation is real.
 
 ### Idea
 
