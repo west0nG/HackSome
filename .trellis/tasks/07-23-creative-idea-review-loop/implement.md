@@ -30,15 +30,18 @@
   route-aware `PromptCatalog` 增加显式历史版本 allowlist，旧冻结 Prompt 不会被
   新版本字节或标签替换。
 - 最终离线门禁：ruff、mypy、compileall、Node UI syntax、CLI help smoke、
-  wheel build/resource inspection 全部通过；主项目 `253` tests passed、
+  wheel build/resource inspection 全部通过；主项目 `255` tests passed、
   `8` tests skipped、`0` failed。8 个 skip 仅为当前沙箱明确拒绝 loopback
   socket 的真实 HTTP/lifecycle 测试，普通开发机/CI 仍会执行它们。
 - Draft PR 已创建。首次真实 Creative smoke run 在 C2 暴露了隐藏后置条件：
   validator 要求 Atom 正文包含模型从未收到的 Controller Territory ID。当前
   修复把谱系收回结构化 metadata/source refs，并让 C3 读取显式
   Atom→Territory index；自然语言 fixture、tamper 回归与全量门禁均已通过。
-- 待完成：修复后的真实 Creative smoke run、浏览器/LAN QA 与在线双臂
-  benchmark；不能用 mock、离线 evaluator 或 plan-only CLI 结果替代。
+- 修复后的真实 Creative smoke run 已以 65/65 tasks succeeded 到达非空 C6
+  waiting：12 个 C4-pass Concept 经证据修订后形成 5 项 shortlist，离线
+  validation 通过；未伪造人工评审或 C7 Idea Card。
+- 待完成：真实 C6 团队评审、浏览器/LAN QA 与在线双臂 benchmark；不能用
+  mock、离线 evaluator 或 plan-only CLI 结果替代。
 - 工作区存在与本任务无关的 Trellis 升级/onboarding 改动；提交必须使用精确
   文件列表，不能把这些文件一起 stage。
 
