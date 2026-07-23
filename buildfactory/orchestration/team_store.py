@@ -7,7 +7,10 @@ control-plane state and is reachable only through deterministic Hub methods.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -78,20 +81,28 @@ class TeamLayout:
 
         layout = cls.initialize(root)
         references = layout.project / "reference"
-        references.mkdir(parents=True, exist_ok=True)
         values = {
-            references / "challenge.md": _validated_markdown(
+            "challenge.md": _validated_markdown(
                 challenge_markdown, label="challenge_markdown"
             ),
-            references / "initial-idea-card.md": _validated_markdown(
+            "initial-idea-card.md": _validated_markdown(
                 initial_idea_card_markdown, label="initial_idea_card_markdown"
             ),
         }
-        conflicts = [str(path) for path in values if path.exists()]
-        if conflicts:
-            raise StoreError(f"Team references already exist: {conflicts}")
-        for path, value in values.items():
-            atomic_write_text(path, value)
+        if references.exists():
+            raise StoreError(f"Team references already exist: {references}")
+        staging = Path(
+            tempfile.mkdtemp(prefix=".reference.", dir=layout.project)
+        )
+        try:
+            for name, value in values.items():
+                atomic_write_text(staging / name, value)
+            os.replace(staging, references)
+        except OSError as exc:
+            raise StoreError(f"could not atomically initialize Team references: {exc}") from exc
+        finally:
+            with contextlib.suppress(FileNotFoundError):
+                shutil.rmtree(staging)
         return layout
 
     @property

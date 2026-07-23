@@ -31,7 +31,11 @@ class BoundActor:
     def from_env(cls, env: Mapping[str, str] | None = None) -> "BoundActor":
         env = os.environ if env is None else env
         actor_id = env.get("AGENT_KEY") or env.get("ACTOR_ID") or ""
-        kind = env.get("AGENT_KIND") or ("lead" if actor_id == "lead" else "department")
+        kind = env.get("AGENT_KIND") or (
+            "lead"
+            if actor_id == "lead"
+            else ("ceo" if actor_id == "ceo" else "department")
+        )
         return cls(
             kind=kind,
             actor_id=actor_id,

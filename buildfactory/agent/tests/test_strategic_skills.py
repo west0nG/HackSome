@@ -64,13 +64,3 @@ def test_v7_objective_workflow_keeps_its_boundary():
     assert "propose_department_objective" in objective
     assert not (SKILLS / "when-idle" / "SKILL.md").exists()
     assert not (SKILLS / "set-objective" / "SKILL.md").exists()
-
-
-def test_ceo_charter_reflects_without_reverifying_done():
-    charter = (ROOT / "agents" / "assets" / "ceo-charter.md").read_text(
-        encoding="utf-8")
-    assert "coordinating executive" in charter
-    assert "you cannot\ncreate Goals" in charter
-    assert "Departments own proactive operating decisions" in charter
-    assert "Waiting is never the company's sole state" in charter
-    assert "`inspect` is available for read-only verification" in charter

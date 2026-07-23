@@ -10,12 +10,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from orchestration.company_hub import HubHTTPServer
 from orchestration.inbox import FileInbox, make_ime
 from orchestration.method_adapter import ActorContext, MethodAdapter, MethodError
 from orchestration.runtime_store import atomic_write_json, file_lock, read_json
 from orchestration.team_scheduler import NON_TERMINAL, TeamGoalScheduler, WorkerLaunch
 from orchestration.team_store import TeamLayout
+from orchestration.team_http import TeamHTTPServer
 from orchestration.verifier_manager import ReviewLaunch, VerifierManager
 
 
@@ -624,7 +624,7 @@ def main() -> None:
 
     threading.Thread(target=watchdog, name="team-hub-watchdog", daemon=True).start()
     port = int(os.environ.get("HUB_PORT", "8910"))
-    server = HubHTTPServer(("0.0.0.0", port), hub)  # type: ignore[arg-type]
+    server = TeamHTTPServer(("0.0.0.0", port), hub)
     print(f"[team-hub] ready root={hub.layout.root} port={port}", flush=True)
     server.serve_forever()
 

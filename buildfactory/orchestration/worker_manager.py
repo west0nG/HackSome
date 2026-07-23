@@ -77,6 +77,7 @@ class DockerWorkerBackend:
         ready_timeout: float = 80.0,
         spec_path: str | Path | None = None,
         shared_mount_target: str = "/company",
+        team_mode: bool = False,
     ):
         self.repo = Path(repo).resolve()
         self.company_id = company_id
@@ -86,6 +87,7 @@ class DockerWorkerBackend:
         self.task_timeout = task_timeout
         self.ready_timeout = ready_timeout
         self.shared_mount_target = shared_mount_target
+        self.team_mode = team_mode
         self.spec = AgentSpec.load(
             str(spec_path or self.repo / "agents" / "ephemeral" / "worker.yaml")
         )
@@ -114,7 +116,11 @@ class DockerWorkerBackend:
             "--network",
             self.network,
             "--label",
-            f"foundagent.company={definition.company_id}",
+            (
+                f"hacksome.team={definition.company_id}"
+                if self.team_mode
+                else f"foundagent.company={definition.company_id}"
+            ),
             "--label",
             "foundagent.kind=worker",
             "--label",
@@ -207,7 +213,11 @@ class DockerWorkerBackend:
                 "ps",
                 "-a",
                 "--filter",
-                f"label=foundagent.company={company_id}",
+                (
+                    f"label=hacksome.team={company_id}"
+                    if self.team_mode
+                    else f"label=foundagent.company={company_id}"
+                ),
                 "--filter",
                 "label=foundagent.kind=worker",
                 "--format",
@@ -786,6 +796,7 @@ def main() -> None:
             else None
         ),
         shared_mount_target="/project" if team_mode else "/company",
+        team_mode=team_mode,
     )
     manager = WorkerManager(
         layout.workers,

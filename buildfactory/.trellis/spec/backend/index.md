@@ -21,9 +21,10 @@
 | [质量规范](./quality-guidelines.md) | 代码标准与禁止模式 | 待补充 |
 | [日志规范](./logging-guidelines.md) | 结构化日志与级别 | 待补充 |
 | [Agent 执行契约](./agent-execution-contracts.md) | 容器内 `claude` / `codex` 的结果解析、凭证隔离、Skill / charter materialization 与双 runtime 消费边界 | E2E 已验证 |
-| [V7 三层 Agent Company 契约](./three-layer-agent-company-contracts.md) | 当前 `main`：CEO → 主动 Department → 一次性 Worker、最多 3 个并行 Verifier、可靠唤醒、隔离、恢复与完整日志 | E2E 已验证 |
-| [Company State 契约](./company-state-contracts.md) | V7 唯一原始公司数据树：Agent 原生渐进式读写、描述性组织与角色挂载权限 | E2E 已验证 |
-| [Peripheral 契约](./peripheral-layer-contracts.md) | V7 五字段 IME、Hub-owned `FileInbox` 的 `peek_one/ack_one/wait`、外部 adapter 与邮件接入 | E2E 已验证 |
+| [Hackathon Team Runtime 契约](./hackathon-team-runtime-contracts.md) | 当前 active：Lead → 单 Worker → fresh Verifier、`/project`、零 Skill 与无终止循环 | 单元/Compose 已验证 |
+| [V7 三层 Agent Company 契约](./three-layer-agent-company-contracts.md) | 上游历史参考：CEO、Department、Company Goal 与 mail | 非 active |
+| [Company State 契约](./company-state-contracts.md) | 上游历史参考：`/company` 原生状态 | 非 active |
+| [Peripheral 契约](./peripheral-layer-contracts.md) | 上游历史参考：IME、外部 adapter 与邮件接入 | 非 active |
 
 ---
 

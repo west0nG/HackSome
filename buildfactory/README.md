@@ -1,63 +1,80 @@
-# BuildFactory（Foundagent）
+# HackSome Build Runtime
 
-**零人公司实验**：常驻 CEO 按需创建 Department，由临时 Worker 执行、临时 Verifier 独立验收，组成一家能自主运营的公司。人类只提供账号凭证和（可选的）初始方向。
+这是 HackSome 的 Idea Card → Project 执行层。它保留 BuildFactory 已验证的
+双模型 runtime adapter、幂等方法信封、日志、恢复和 Worker/Verifier lifecycle，
+但 active runtime 不再是一家公司。
 
-这个仓库不是某个产品的代码，而是这家 AI 公司的**办公楼与制度**：agent 的容器化运行时、公司共享记忆系统、目标编排协议、对外感知入口。
+第一版一个 Team 固定由三部分组成：
 
-一句话心智模型：**一个 Company Compose stack = 一家公司**。Company 状态在 `state/<公司名>/`；换个 `COMPANY` 就能开第二家公司。唯一跨公司的状态是 `state/_mail/registry.jsonl`，用于保证 `foundagent.net` 地址全局唯一。
-
-## 新人从这里开始
-
-📖 **[docs/overview.md](docs/overview.md)** — 项目总览：愿景、10 条设计原则、四层架构、每个核心机制的实现逻辑。
-
-## 快速开始
-
-```bash
-# 前置：本地 Docker + vm/.env.local 中的模型登录配置
-make mail-up      # 全宿主机只启动一次域名级邮件 router
-make up           # 启动一家公司（CEO + 确定性内核；其他角色按需创建）
-make logs-ceo    # 看 CEO 的循环日志
-make down        # 停止
-make mail-down    # 仅在要停止整个平台邮件接入时执行
-
-# 单元测试
-.venv-cua/bin/python -m pytest agent/tests/ orchestration/tests/ \
-    peripheral/tests/
-
-# 显式真实 E2E（启动隔离 Docker 栈并消耗真实 Worker/Verifier 模型轮次）
-make e2e-native-company ACCOUNT=foundagent
+```text
+resident Lead
+  -> FIFO Goal
+  -> one Worker
+  -> one fresh Verifier
+  -> next Goal, or wake Lead when the batch drains
 ```
 
-邮件接入还需要在 `vm/.env.local` 配置 `R2_ENDPOINT`、
-`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`；Company 发件需要
-`RESEND_API_KEY`。`make mail-up` 使用独立的 `foundagent-mail` Compose
-project，只运行一个 `mail-router`，不会随 `make up COMPANY=x` 被复制。
-router 暂停时原始邮件继续留在 R2 `inbox/`；恢复后会按全局注册表写入
-`state/<company>/mailboxes/`。不要删除 `state/_mail` 或 Company 邮件日志。
+## 核心契约
 
-`e2e-native-company` 从空的原生 `/company` 开始，验证 Worker 浅层发现、
-直接写入、`submit_result`、Verifier 只读核验，以及 Hub 重启后的文件持久性。
-测试使用随机 `e2e-*` 公司名，结束后会停止容器并清理隔离状态；它不会被普通
-单元测试自动执行。`ACCOUNT` 只作为 Codex 登录种子的来源；测试会创建一个不含
-业务 API 密钥、Cookie 等生产凭据的临时账号包。本机存在当前
-`~/.codex/auth.json` 时会优先使用它，避免复用已轮换的旧 refresh token；也可用
-`E2E_CODEX_AUTH_SEED=/绝对路径/auth.json` 显式指定。
+- Lead 是唯一常驻 Agent，长期保留 session。
+- Team 同时最多一个 Worker、一个 Verifier。
+- Lead 可以一次创建任意数量 Goal；系统按创建顺序执行。
+- Verifier PASS 后停止当前 Worker，再启动下一 Goal。
+- Verifier FAIL 后恢复同一个 Worker、workspace、home 和 session。
+- 没有 deadline、`failed_time`、Objective、Department、Notes、mail、自动完成态
+  或业务 idle 状态。
+- quiet heartbeat 只表示再次唤醒 Lead 继续项目。
+- Lead 与 Worker 对 `/project` 完整读写；Verifier 的 canonical `/project` 只读。
+- 三个 active AgentSpec 都是 `skills: []`。Skill 框架保留，但第一版不物化 Skill。
 
-## 架构速览
+`/project/reference/challenge.md` 与
+`/project/reference/initial-idea-card.md` 只是初始化材料。Agent 可以修改、
+重新解释或完全忽略它们。
 
-自底向上四层：
+## 初始化与启动
 
-| 层 | 目录 | 职责 |
-|---|---|---|
-| 外设层 | `peripheral/` | webhook 等外部信号归一化；平台级 mail-router 将 R2 邮件隔离写入对应 Company |
-| 编排层 | `orchestration/` | 常驻循环、Goal 派活/验收状态机、非 LLM 的确定性 Hub |
-| 状态面 | `state/<公司名>/company/` | Agent 原生共享文件夹：Skill 负责渐进式发现、读取与维护 |
-| 执行层 | `agent/` + `vm/` | 容器镜像、角色装备（charter/skill）物化、凭证接缝 |
+```bash
+make init TEAM=my-team \
+  CHALLENGE_FILE=/absolute/path/challenge.md \
+  IDEA_CARD_FILE=/absolute/path/initial-idea-card.md
 
-贯穿性原则：LLM 只做业务判断，协议与仲裁全是确定性代码；干活的不能当裁判（doer≠judge，结构性强制）；加角色/技能/账号全靠声明式配置，零代码改动。
+make up TEAM=my-team ACCOUNT=foundagent
+make logs-lead TEAM=my-team
+make down TEAM=my-team
+```
 
-## 深入阅读
+`make init` 只在 `/project` 中创建两份 reference；它拒绝覆盖已有 reference。
+之后 `/project` 的组织方式完全由 Team 自己决定。
 
-- `.trellis/spec/backend/` — 代码级精确契约文档（信封格式、状态机、原生 Company State、装备覆盖等）
-- `aiworkforce/` — 方法论：加角色/技能的 8 阶段 SOP、CEO 判断力设计全记录
-- `.trellis/tasks/` — 每个特性的需求、设计与验收记录
+## 确定性方法
+
+Lead Prompt 内直接包含：
+
+```bash
+python3 -m orchestration.control_client create_goal \
+  --json '{"intent":"concrete work","acceptance":"optional verifier-only context"}' \
+  --request-id 'goal-<stable-purpose-id>'
+
+python3 -m orchestration.control_client list_my_goals
+
+python3 -m orchestration.control_client cancel_goal \
+  --json '{"goal_id":"goal-...","reason":"why"}' \
+  --request-id 'cancel-<goal-id>'
+```
+
+Worker 使用空业务 payload 的 `submit_result`；Verifier 使用
+`submit_verdict(PASS|FAIL, reason)`。自然语言声明不会推进 Hub 状态。
+
+## 验证
+
+```bash
+make validate
+
+# 完整 Python 回归
+.venv-cua/bin/python -m pytest agent/tests orchestration/tests
+```
+
+Active 契约见
+`.trellis/spec/backend/hackathon-team-runtime-contracts.md`。旧 Company、mail、
+Department 和 Peripheral 源码暂时保留为 BuildFactory 上游参考，但不进入
+`docker-compose.yml` 的 active runtime。

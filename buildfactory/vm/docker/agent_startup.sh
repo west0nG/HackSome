@@ -13,6 +13,8 @@
 #   container env (AGENT_KEY / AGENT_CHARTER / AGENT_MCP / PYTHONPATH).
 #
 # `claude` and `node` live in /usr/bin (always on PATH); no profile sourcing needed.
+# AGENT_LOOP_MODULE lets the Hackathon Team select its Lead loop without
+# replacing this startup hook and accidentally skipping computer-server.
 
 # Per-account static egress (07-03-proxy-slot): expand CUA_PROXY (injected from
 # accounts/<id>/secrets.env) into proxy env for the computer-server subtree ONLY
@@ -31,4 +33,4 @@
 # bricking the agent. The charter itself is injected per-wake by agent_loop, not here.
 /usr/bin/python3 -m agent.resident_loadout
 
-exec /usr/bin/python3 -m orchestration.agent_loop
+exec /usr/bin/python3 -m "${AGENT_LOOP_MODULE:-orchestration.agent_loop}"

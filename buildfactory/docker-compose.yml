@@ -91,6 +91,7 @@ services:
       AGENT_KIND: lead
       AGENT_SPEC: /opt/foundagent-orch/agents/lead.yaml
       AGENT_CHARTER: /opt/foundagent-orch/agents/assets/lead-charter.md
+      AGENT_LOOP_MODULE: orchestration.lead_loop
       AGENT_HEARTBEAT_SECS: ${LEAD_HEARTBEAT_SECS:-900}
       AGENT_CLAUDE_TIMEOUT: ${AGENT_CLAUDE_TIMEOUT:-3600}
       HUB_URL: http://hub:8910
@@ -98,11 +99,6 @@ services:
       CODEX_HOME: /home/kasm-user/.claude/codex
       AGENT_SESSION_FILE: /home/kasm-user/.claude/session_id
       CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1"
-    entrypoint:
-      - sh
-      - -c
-      - python3 -m orchestration.lead_loop
-
   worker-manager:
     <<: *manager
     container_name: ${TEAM:-hackathon-team}-worker-manager

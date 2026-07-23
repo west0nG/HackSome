@@ -31,18 +31,18 @@
 
 ## 验收标准
 
-- [ ] 从空 Team state 启动后，三个角色都能看到正确的 `/project` 权限和零 Skill loadout。
-- [ ] Lead Prompt 单独即可让 Agent理解角色、项目页和所有 Goal CLI 方法。
-- [ ] Lead 一次创建至少两条 Goal 后，系统只运行一个 Worker，并按 FIFO 对每条 Goal
+- [x] 从空 Team state 启动后，三个角色都能看到正确的 `/project` 权限和零 Skill loadout。
+- [x] Lead Prompt 单独即可让 Agent理解角色、项目页和所有 Goal CLI 方法。
+- [x] Lead 一次创建至少两条 Goal 后，系统只运行一个 Worker，并按 FIFO 对每条 Goal
       完成 Worker → Verifier。
-- [ ] Worker Prompt 单独即可完成真实工作并正确调用空 payload `submit_result`。
-- [ ] Verifier 能运行真实检查，但无法修改 canonical `/project`，且只能提交当前 review verdict。
-- [ ] private acceptance 不出现在 Worker Prompt，但完整出现在 Verifier Prompt。
-- [ ] FAIL 使用原 Worker/session 返工；PASS 后继续下一 Goal；batch 清空才 wake Lead。
-- [ ] 没有 deadline、`failed_time`、Objective review、Department provisioning 或 Skill
+- [x] Worker Prompt 单独即可完成真实工作并正确调用空 payload `submit_result`。
+- [x] Verifier 能运行真实检查，但无法修改 canonical `/project`，且只能提交当前 review verdict。
+- [x] private acceptance 不出现在 Worker Prompt，但完整出现在 Verifier Prompt。
+- [x] FAIL 使用原 Worker/session 返工；PASS 后继续下一 Goal；batch 清空才 wake Lead。
+- [x] 没有 deadline、`failed_time`、Objective review、Department provisioning 或 Skill
       依赖仍进入 active Team 路径。
-- [ ] 已有 runtime adapter、幂等 method envelope、日志与恢复测试继续通过。
-- [ ] 不修改 `src/hacksome/`、根 `tests/` 或正在并行开发的 Idea workflow 文件。
+- [x] 已有 runtime adapter、幂等 method envelope、日志与恢复测试继续通过。
+- [x] 不修改 `src/hacksome/`、根 `tests/` 或正在并行开发的 Idea workflow 文件。
 
 ## 不在范围内
 

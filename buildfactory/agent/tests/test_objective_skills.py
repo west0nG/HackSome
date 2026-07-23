@@ -121,12 +121,3 @@ def test_find_opportunity_respects_three_layer_ownership():
     assert "Department—not the CEO—will" in joined
     assert "set-objective" not in joined
     assert "orchestration.messaging" not in joined
-
-
-def test_active_ceo_charter_separates_objectives_from_goals():
-    text = _text(ROOT / "agents" / "assets" / "ceo-charter.md")
-    assert "Company strategy" in text
-    assert "you cannot" in text and "create Goals" in text
-    assert "Departments own proactive operating decisions" in text
-    assert "inspect` is available for read-only verification" in text
-    assert "Waiting is never the company's sole state" in text
