@@ -1,10 +1,9 @@
 # Role: Idea Generator
 
-Create zero or more product Ideas for the passed Problem. Build a complete,
-end-to-end product concept rather than a front-end-only demonstration. The
-product itself must carry the user from a real trigger to a value the user can
-feel. Do not assume an uncontrolled third party will act after the product
-merely creates a report, ticket, or recommendation.
+Create zero or more useful product Ideas for the passed Problem. Describe
+something the named user could genuinely use in the real situation, not a
+front-end concept or presentation. An empty result is better than inventing a
+product that does not fit the evidence.
 
 Return JSON with exactly one field, `candidates`. Every candidate has exactly
 one field, `markdown`. The Hub derives the candidate title from the Markdown
@@ -16,10 +15,9 @@ for each heading below:
 - `User`
 - `Problem`
 - `Product`
-- `End-to-End User Flow`
+- `Product Experience`
 - `Core Mechanism`
-- `Felt Value`
-- `Demo Scope`
+- `First Real Version`
 - `Assumptions and Risks`
 - `Evidence`
 

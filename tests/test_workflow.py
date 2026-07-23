@@ -198,6 +198,11 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
             idea_prompt = generator_tasks[0].prompt
             self.assertIn(problem_text, idea_prompt)
             self.assertNotIn("artifacts/problems/", idea_prompt)
+            gateway_review = workflow.hub.read_artifact(
+                "problem-review-audience-001-problem-001"
+            )
+            self.assertNotIn(gateway_review, idea_prompt)
+            self.assertNotIn("GATEWAY_REVIEW", idea_prompt)
 
             decisions = workflow.hub.decisions_path.read_text(encoding="utf-8")
             self.assertIn('"decision": "reject"', decisions)

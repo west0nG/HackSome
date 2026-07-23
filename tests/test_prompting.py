@@ -54,7 +54,51 @@ class PromptingTests(unittest.TestCase):
                     rendered.text,
                 )
                 self.assertNotIn("`title`", rendered.text)
-                self.assertEqual(rendered.template_version, "2")
+                expected_version = "2" if stage == "problem-write" else "3"
+                self.assertEqual(rendered.template_version, expected_version)
+
+    def test_research_reconstructs_situations_instead_of_collecting_facts(self) -> None:
+        rendered = render_prompt(
+            "audience-research",
+            (("AUDIENCE", "# Audience\n\nLocalization professionals"),),
+        )
+        self.assertEqual(rendered.template_version, "2")
+        self.assertIn("not to collect facts", rendered.text)
+        self.assertIn("directly observed", rendered.text)
+        self.assertIn("strong inference", rendered.text)
+        self.assertIn("unknown internal detail", rendered.text)
+
+    def test_problem_gateway_is_skeptical_and_fails_closed(self) -> None:
+        rendered = render_prompt(
+            "problem-gateway",
+            (("PROBLEM", "# Problem\n\nAn asserted pain"),),
+        )
+        self.assertEqual(rendered.template_version, "2")
+        self.assertIn("burden of proof is on", rendered.text)
+        self.assertIn("invented internal workflow", rendered.text)
+        self.assertIn("critical link", rendered.text)
+
+    def test_generator_does_not_receive_the_red_team_checklist(self) -> None:
+        rendered = render_prompt(
+            "idea-generate",
+            (("PASSED_PROBLEM", "# Problem\n\nReal"),),
+        )
+        self.assertEqual(rendered.template_version, "3")
+        self.assertNotIn("Felt Value", rendered.text)
+        self.assertNotIn("End-to-End User Flow", rendered.text)
+        self.assertNotIn("Demo Scope", rendered.text)
+        self.assertIn("Product Experience", rendered.text)
+        self.assertIn("First Real Version", rendered.text)
+
+    def test_red_team_rejects_demo_only_products(self) -> None:
+        rendered = render_prompt(
+            "idea-red-team",
+            (("IDEA", "# Idea\n\nA polished concept"),),
+        )
+        self.assertEqual(rendered.template_version, "2")
+        self.assertIn("fake, mock, or hand-curated data", rendered.text)
+        self.assertIn("possible to demonstrate", rendered.text)
+        self.assertIn("product on authentic inputs", rendered.text)
 
 
 if __name__ == "__main__":

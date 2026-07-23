@@ -21,10 +21,9 @@ IDEA_HEADINGS = (
     "User",
     "Problem",
     "Product",
-    "End-to-End User Flow",
+    "Product Experience",
     "Core Mechanism",
-    "Felt Value",
-    "Demo Scope",
+    "First Real Version",
     "Assumptions and Risks",
     "Evidence",
 )

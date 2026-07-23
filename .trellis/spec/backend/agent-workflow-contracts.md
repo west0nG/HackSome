@@ -102,11 +102,14 @@ Prompts SHOULD contain only the context required by the role:
 | Researcher | challenge brief, one audience |
 | Problem Writer | challenge brief, one audience, that audience's Research |
 | Problem Gateway | challenge brief, audience, Research, one Problem |
-| Idea Generator | challenge brief, audience, Research, passed Problem, Gateway review |
+| Idea Generator | challenge brief, audience, Research, passed Problem |
 | Idea Red Team | challenge brief, audience, passed Problem, Gateway review, one Idea |
 
 No prompt may reference a downstream review or candidate that does not yet
-exist.
+exist. The Idea Generator MUST NOT receive the Gateway review text or the Idea
+Red Team's decision rubric. Passing only the accepted Problem prevents the
+Generator from writing directly to the reviewer's checklist while the Hub
+retains the Gateway artifact for process lineage.
 
 ## 5. Structured-output boundary
 
@@ -188,6 +191,14 @@ The Writer cites only URLs present in its Research input. The Gateway rejects
 Problems that are speculative, unsupported, outside the challenge, or too weak
 for the user to care about.
 
+Research MUST reconstruct concrete situations instead of collecting facts by
+source. Important claims identify the actor, setting, constraint, failure or
+compromise, current response, and remaining consequence. They also distinguish
+direct observation, strong inference, and unknown internal detail. A Problem
+Gateway acts as a skeptical Red Team: a polished card does not compensate for a
+missing trigger, unsupported internal workflow, weak consequence, or critical
+unknown.
+
 ### Idea
 
 An Idea MUST have one H1 and these H2 sections exactly once:
@@ -196,18 +207,17 @@ An Idea MUST have one H1 and these H2 sections exactly once:
 User
 Problem
 Product
-End-to-End User Flow
+Product Experience
 Core Mechanism
-Felt Value
-Demo Scope
+First Real Version
 Assumptions and Risks
 Evidence
 ```
 
-The User Flow must start with a real trigger, include user/product interaction,
-and terminate at a value moment delivered by the product. Describing a report,
-recommendation, or ticket is insufficient when the claimed user value still
-depends on an uncontrolled third party acting.
+These headings provide a readable product description without disclosing the
+downstream Red Team checklist. `First Real Version` describes the first product
+that an actual user can use; it is not a license to substitute a staged demo,
+fake data, or mock integrations for the core outcome.
 
 ### Reviews
 
@@ -216,21 +226,28 @@ JSON decision is authoritative for routing; Markdown cannot override it.
 
 ## 7. Red Team gate
 
-The Idea Red Team is deliberately narrow and independent. It answers:
+The Idea Red Team is independent and actively tries to disprove the Idea as a
+real product. It reconstructs the actual use: the user and trigger, authentic
+input or access, product action, next step, and concrete change for the user.
+It judges from the perspective of an experienced product owner, named user, and
+skeptical buyer rather than rewarding hackathon presentation quality.
 
-1. Can the named user genuinely perceive the claimed value?
-2. Is there a complete User Flow in which this product delivers that value?
+It rejects when:
 
-It also rejects when:
-
-- the product only creates an artifact but the value requires someone else to
-  act;
-- the core mechanism assumes unavailable permissions, private data, or product
-  authority;
-- the flow changes the passed Problem rather than solving it.
+- the core outcome works only on fake, mock, synthetic, or hand-curated data
+  rather than authentic user-provided or legitimately accessible inputs;
+- the core mechanism assumes unavailable permissions, private data,
+  integrations, or product authority;
+- the product stops at a dashboard, score, report, recommendation, ticket, or
+  generated artifact while the value requires an uncontrolled actor to act;
+- the first real version is merely a staged demonstration with no credible
+  repeated use after the event;
+- the flow changes, avoids, or restates the passed Problem instead of solving
+  it.
 
 The v1 Red Team has only `pass` and `reject`. It does not repair, rank, compare,
-or see sibling Ideas.
+or see sibling Ideas. A narrow but authentic first version may pass; demo
+feasibility alone may not.
 
 ## 8. Hub persistence contract
 
@@ -340,6 +357,9 @@ There is deliberately no `hacksome resume` command in v1.
 
 - Good: two Audiences research concurrently; each later Prompt contains only
   its selected persisted text; a passed Problem fans out to three Generators.
+- Good: Research labels a player report as observed, a workflow conclusion as
+  inference, and an internal handoff as unknown; the Gateway can reject when an
+  unknown is critical to the Problem.
 - Base: multiple Generators return similar Ideas; every independently passing
   Idea receives its own Red Team and becomes a card.
 - Base: zero Audiences, Problems, Ideas, or Red Team passes completes with an
@@ -348,6 +368,10 @@ There is deliberately no `hacksome resume` command in v1.
   card. Tests must fail on either routing error.
 - Bad: a downstream Prompt contains only `artifacts/...` paths instead of exact
   upstream text.
+- Bad: an Idea Generator Prompt contains the Problem Gateway review or explicit
+  Red Team checklist, allowing the Generator to optimize its prose for a pass.
+- Bad: an Idea claims a production outcome but its first version replaces the
+  necessary private inputs or integration with synthetic data.
 - Bad: an out-of-order parallel result uses the previous Problem's Gateway ref.
   Source refs must be recomputed from the current Problem during publication.
 - Bad: Run metadata records `model: null` and silently inherits a different
@@ -360,11 +384,15 @@ The default suite MUST be offline and cover:
 - Codex command, stdin Prompt, web-search policy, schema validation, JSONL
   capture, timeout cleanup, and exact-session infrastructure retry;
 - Prompt rendering with exact inline Markdown and no file-reading instruction;
+- Research prompts that require situation reconstruction plus
+  observation/inference/unknown labels;
 - broad-audience output, the five-Audience hard limit, and stable Hub-assigned IDs;
 - Research parallelism and Research-only web search;
-- Problem Writer/Gateway separation and reject routing;
+- Problem Writer/Gateway separation, skeptical fail-closed criteria, and reject routing;
 - default three-way Idea Generator fanout and preservation of similar Ideas;
-- one fresh Red Team per Idea and rejection of non-delivered value;
+- Idea Generator prompts that exclude Gateway review text and downstream gate
+  language;
+- one fresh Red Team per Idea and rejection of non-delivered, mock-only value;
 - deterministic Idea Card publication and empty outputs;
 - complete task trace persistence and offline integrity validation;
 - deterministic ordering under out-of-order parallel completion.

@@ -414,7 +414,6 @@ class UsefulIdeaWorkflow:
                 blocks.extend(
                     (
                         ("PASSED_PROBLEM", self.hub.read_artifact(problem.artifact_ref)),
-                        ("GATEWAY_REVIEW", self.hub.read_artifact(gateway_ref)),
                     )
                 )
                 calls.append(

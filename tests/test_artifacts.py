@@ -20,8 +20,8 @@ class ArtifactTests(unittest.TestCase):
     def test_required_sections_are_validated_deterministically(self) -> None:
         validate_markdown(idea_markdown(), required_h2=IDEA_HEADINGS, label="Idea")
 
-        broken = idea_markdown().replace("## Felt Value", "## Value")
-        with self.assertRaisesRegex(ArtifactError, "Felt Value"):
+        broken = idea_markdown().replace("## First Real Version", "## Prototype")
+        with self.assertRaisesRegex(ArtifactError, "First Real Version"):
             validate_markdown(broken, required_h2=IDEA_HEADINGS, label="Idea")
 
     def test_duplicate_required_section_is_rejected(self) -> None:
@@ -37,7 +37,7 @@ class ArtifactTests(unittest.TestCase):
             lineage={"idea_id": "idea-001", "red_team_session_id": "session-9"},
         )
         self.assertIn('"idea_id": "idea-001"', card)
-        self.assertIn("## End-to-End User Flow\n\nvalue", card)
+        self.assertIn("## Product Experience\n\nvalue", card)
         self.assertIn("Decision: `pass`", card)
         self.assertIn("The flow delivers value.", card)
 

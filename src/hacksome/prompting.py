@@ -49,19 +49,19 @@ _SPECS = {
         "hacksome.idea.audience-expand", "1", "audience-expand.md", "audiences"
     ),
     "audience-research": _PromptSpec(
-        "hacksome.idea.audience-research", "1", "audience-research.md", "document"
+        "hacksome.idea.audience-research", "2", "audience-research.md", "document"
     ),
     "problem-write": _PromptSpec(
         "hacksome.idea.problem-write", "2", "problem-write.md", "candidates"
     ),
     "problem-gateway": _PromptSpec(
-        "hacksome.idea.problem-gateway", "1", "problem-gateway.md", "review"
+        "hacksome.idea.problem-gateway", "2", "problem-gateway.md", "review"
     ),
     "idea-generate": _PromptSpec(
-        "hacksome.idea.idea-generate", "2", "idea-generate.md", "candidates"
+        "hacksome.idea.idea-generate", "3", "idea-generate.md", "candidates"
     ),
     "idea-red-team": _PromptSpec(
-        "hacksome.idea.idea-red-team", "1", "idea-red-team.md", "review"
+        "hacksome.idea.idea-red-team", "2", "idea-red-team.md", "review"
     ),
 }
 
