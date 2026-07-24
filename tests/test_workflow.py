@@ -166,10 +166,17 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
             index = await workflow.execute()
 
             state = workflow.hub.load_state()
+            self.assertEqual(state["schema_version"], 2)
+            self.assertEqual(state["route"]["id"], "useful")
             self.assertEqual(state["status"], "completed")
             self.assertTrue(index.is_file())
             self.assertEqual(len(state["idea_card_ids"]), 2)
             self.assertGreaterEqual(runner.max_active, 2)
+            manifest = state["resource_manifest"]
+            self.assertEqual(manifest["path"], "resources/manifest.json")
+            self.assertTrue(
+                (workflow.run_dir / manifest["path"]).is_file()
+            )
 
             research_tasks = [task for task in runner.tasks if task.task_id.startswith("research-")]
             self.assertEqual(len(research_tasks), 2)
@@ -215,6 +222,22 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue((task_root / "raw" / "stdout.jsonl").is_file())
                 self.assertTrue((task_root / "raw" / "stderr.jsonl").is_file())
                 self.assertEqual(record["session_id"], f"session-{task_id}")
+                request = json.loads(
+                    (task_root / "request.json").read_text(encoding="utf-8")
+                )
+                expected_schema = (
+                    "audiences.schema.json"
+                    if record["stage"] == "audience-expand"
+                    else "candidates.schema.json"
+                    if record["stage"] in {"problem-write", "idea-generate"}
+                    else "review.schema.json"
+                    if record["stage"] in {"problem-gateway", "idea-red-team"}
+                    else "document.schema.json"
+                )
+                self.assertEqual(
+                    request["output_schema"]["name"],
+                    expected_schema,
+                )
 
             self.assertEqual(validate_run(workflow.run_dir), [])
 

@@ -1,11 +1,12 @@
-# Idea Workflow Contracts
+# Useful Idea Workflow Contracts
 
-> Normative backend contract for HackSome Idea Phase v1.
+> Normative backend contract for the Useful route. Creative is specified in
+> `creative-agent-workflow-contracts.md`.
 
 ## 1. Product boundary
 
-HackSome v1 is a local Codex orchestrator for the Useful Idea phase only. It
-starts with a hackathon prompt and ends with zero or more Idea Cards.
+The Useful route is a local Codex orchestrator that starts with a hackathon
+prompt and ends with zero or more Useful Idea Cards.
 
 The only logical steps are:
 
@@ -80,6 +81,12 @@ Persistence and transport are separate concerns:
 - Agents are never instructed to inspect upstream files, directories, or
   manifests.
 - Agents return schema-constrained JSON; the Hub publishes Markdown fields.
+
+v2 run 创建时冻结完整 route Prompt/Schema catalog。Package 升级后，新 run
+使用当前 Prompt 版本；历史 run 只能加载代码显式 allowlist 的旧版本，并继续
+严格校验 stage 顺序、template ID、web policy、路径与文件 hash。Loader 必须
+保留 manifest 中的旧 `template_version`，不能用当前版本标签解释旧字节；
+未列入 allowlist 的版本 fail closed。
 
 Every rendered Prompt MUST be saved before model invocation and MUST contain
 named data blocks with unambiguous boundaries, for example:
@@ -322,8 +329,10 @@ body and its review. An empty set of valid cards produces a valid empty index.
 - Persist every failure and leave the run inspectable.
 - Infrastructure retry uses the runner's exact-session resume behavior.
 - Never interpret a missing/failed task as an empty candidate list.
-- v1 has no Run-level `resume` command. Exact-session resume exists only inside
-  one `CodexRunner.run()` infrastructure retry.
+- Useful has no Run-level recovery capability. The global CLI may expose
+  `resume` for Creative, but it MUST reject a Useful run without changing any
+  run bytes. Exact-session resume exists only inside one
+  `CodexRunner.run()` infrastructure retry.
 - Offline `validate` invokes no Codex process and checks the run from persisted
   state and hashes.
 
@@ -359,6 +368,7 @@ CLI surface:
 ```text
 hacksome doctor [--json]
 hacksome run (CHALLENGE | --prompt TEXT)
+  [--route useful]
   [--model MODEL]
   [--reasoning-effort low|medium|high|xhigh|max|ultra]
   [runtime/fanout options]
@@ -366,7 +376,8 @@ hacksome status RUN_DIR [--json]
 hacksome validate RUN_DIR
 ```
 
-There is deliberately no `hacksome resume` command in v1.
+`hacksome resume RUN_DIR` exists as a Creative-only command. Passing a Useful
+run MUST fail closed and leave the run directory byte-for-byte unchanged.
 
 ## 12. Validation and error matrix
 

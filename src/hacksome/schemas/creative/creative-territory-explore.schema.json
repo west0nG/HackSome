@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["territory_markdown", "atoms"],
+  "properties": {
+    "territory_markdown": {"type": "string", "minLength": 1},
+    "atoms": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["markdown"],
+        "properties": {
+          "markdown": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

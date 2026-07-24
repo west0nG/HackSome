@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/agent-workflow-contracts.md", "reason": "复核 Useful v1 的七个 Agent stage、Prompt-first persistence、无运行级 resume 和失败/空结果语义没有被 Creative 改写。"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "复核 run state、decision ledger、human ledger、API DTO 与 UI 投影只有一个合同 owner，且 round-trip 不丢字段。"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复核共享层没有重复实现现有 Hub/runner 能力，也没有形成比两个显式 route 更复杂的 DSL。"}
+{"file": ".trellis/tasks/archive/2026-07/07-22-hackathon-agent-product/research/thesis-red-team.md", "reason": "复核模型自评没有被包装为客观 taste，C6 真实团队反馈与最终 benchmark 仍保留外部判断。"}

@@ -125,6 +125,10 @@ if mode == "large_event":
 if mode == "transient_error_then_success":
     print(json.dumps({"type": "error", "message": "Reconnecting... 1/5"}), flush=True)
 
+if mode == "mcp_websocket_noise":
+    print("MCP server notification: websocket reconnected", flush=True)
+    print("websocket transport diagnostic from MCP", file=sys.stderr, flush=True)
+
 thread_id = "thread-retry" if is_resume else f"thread-{cwd.name}"
 print(json.dumps({"type": "thread.started", "thread_id": thread_id}), flush=True)
 print(json.dumps({
@@ -379,6 +383,46 @@ class CodexRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.success)
         self.assertEqual(result.attempts, 1)
         self.assertEqual(len(self.read_calls()), 1)
+
+    async def test_mcp_websocket_noise_is_logged_but_not_returned_as_output(
+        self,
+    ) -> None:
+        runner = CodexRunner(self.config())
+
+        with self.fake_environment(FAKE_CODEX_MODE="mcp_websocket_noise"):
+            result = await runner.run(self.task())
+
+        self.assertTrue(result.success)
+        self.assertEqual(
+            result.structured_output,
+            {"status": "ok", "prompt": self.task().prompt},
+        )
+        self.assertNotIn(
+            "websocket",
+            json.dumps(result.structured_output, sort_keys=True).casefold(),
+        )
+        stdout_records = [
+            json.loads(line)
+            for line in result.logs.stdout.read_text(encoding="utf-8").splitlines()
+        ]
+        stderr_records = [
+            json.loads(line)
+            for line in result.logs.stderr.read_text(encoding="utf-8").splitlines()
+        ]
+        self.assertTrue(
+            any(
+                row["event"].get("type") == "runner.stdout.unparsed"
+                and "websocket" in row["event"].get("line", "").casefold()
+                for row in stdout_records
+            )
+        )
+        self.assertTrue(
+            any(
+                row.get("type") == "runner.stderr"
+                and "websocket" in row.get("line", "").casefold()
+                for row in stderr_records
+            )
+        )
 
     def test_subprocess_stream_limit_has_a_safe_minimum(self) -> None:
         with self.assertRaisesRegex(ValueError, "at least 65536"):

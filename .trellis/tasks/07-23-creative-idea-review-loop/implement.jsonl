@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/agent-workflow-contracts.md", "reason": "当前 Useful v1 的规范合同；共享 Harness 抽取、Prompt 传输、Session、失败语义和回归边界必须以它为准。"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "C6 涉及 Hub、JSONL、HTTP API 与浏览器投影，必须由单一 owner 定义 payload、校验与状态转换。"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "约束 TaskExecutor/PromptCatalog 只抽取真实重复能力，避免新建与 RunHub 重叠的通用框架。"}
+{"file": ".trellis/tasks/archive/2026-07/07-22-hackathon-agent-product/research/thesis-red-team.md", "reason": "记录 Idea/taste 缺少客观传感器和模型评审相关错误的风险，为唯一 C6 人工关卡及 pairwise/外部反馈设计提供依据。"}

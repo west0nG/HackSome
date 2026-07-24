@@ -21,7 +21,10 @@ from hacksome.codex import CodexRunner
 from hacksome.config import CodexConfig
 from hacksome.hub import RunHub
 from hacksome.models import CodexResult, CodexTask
-from hacksome.prompting import render_prompt, schema_path
+from hacksome.prompting import PromptCatalog, useful_prompt_catalog
+from hacksome.routes import inspect_run as inspect_saved_run
+from hacksome.routes import validate_run as validate_saved_run
+from hacksome.task_executor import AgentTaskExecutionError, AgentTaskExecutor
 
 
 class WorkflowError(RuntimeError):
@@ -90,10 +93,19 @@ class UsefulIdeaWorkflow:
         runner: Runner,
         *,
         settings: WorkflowSettings | None = None,
+        prompt_catalog: PromptCatalog | None = None,
     ) -> None:
         self.hub = hub
         self.runner = runner
         self.settings = settings or WorkflowSettings()
+        selected_catalog = prompt_catalog or useful_prompt_catalog
+        self.task_executor = AgentTaskExecutor(
+            hub,
+            runner,
+            selected_catalog,
+            task_timeout_seconds=self.settings.task_timeout_seconds,
+            semantic_validator=self._validate_task_output,
+        )
 
     @property
     def run_dir(self) -> Path:
@@ -119,10 +131,19 @@ class UsefulIdeaWorkflow:
             codex_config=selected_config,
             run_id=run_id,
         )
+        frozen = useful_prompt_catalog.freeze(
+            hub.run_dir,
+            route_id="useful",
+            contract_version="1",
+            prompt_policy_version="1",
+            stage_policy_version="1",
+        )
+        hub.set_resource_manifest(frozen.manifest_reference())
         return cls(
             hub,
             runner or CodexRunner(selected_config),
             settings=selected_settings,
+            prompt_catalog=frozen.catalog,
         )
 
     async def execute(self) -> Path:
@@ -260,7 +281,6 @@ class UsefulIdeaWorkflow:
                                 ("AUDIENCE", self.hub.read_artifact(audience.artifact_ref)),
                             ),
                             parent_refs=(challenge_ref, audience.artifact_ref),
-                            web_search=True,
                         ),
                     )
                 )
@@ -588,46 +608,16 @@ class UsefulIdeaWorkflow:
         task_id: str,
         blocks: Sequence[tuple[str, str]],
         parent_refs: Sequence[str],
-        web_search: bool = False,
     ) -> dict[str, Any]:
-        rendered = render_prompt(stage, blocks)
-        output_schema = schema_path(stage)
-        paths = self.hub.begin_task(
-            task_id=task_id,
-            stage=stage,
-            prompt=rendered.text,
-            prompt_metadata=rendered.metadata(),
-            output_schema=output_schema,
-            web_search=web_search,
-            parent_refs=parent_refs,
-        )
-        task = CodexTask(
-            task_id=task_id,
-            prompt=rendered.text,
-            cwd=paths.workspace,
-            output_schema=output_schema,
-            web_search=web_search,
-            timeout_seconds=self.settings.task_timeout_seconds,
-            log_dir=paths.raw,
-        )
         try:
-            result = await self.runner.run(task)
-        except asyncio.CancelledError as exc:
-            self.hub.fail_task(task_id, exc)
-            raise
-        except Exception as exc:
-            self.hub.fail_task(task_id, exc)
-            raise WorkflowError(f"{task_id} failed before returning a result: {exc}") from exc
-        self.hub.finish_task(result)
-        if not result.success:
-            message = result.error.message if result.error is not None else result.status.value
-            raise WorkflowError(f"{task_id} failed: {message}")
-        try:
-            self._validate_task_output(stage, result.structured_output)
-        except (ArtifactError, WorkflowError) as exc:
-            self.hub.invalidate_task(task_id, exc)
-            raise WorkflowError(f"{task_id} returned invalid content: {exc}") from exc
-        return result.structured_output
+            return await self.task_executor.execute(
+                stage=stage,
+                task_id=task_id,
+                blocks=blocks,
+                parent_refs=parent_refs,
+            )
+        except AgentTaskExecutionError as exc:
+            raise WorkflowError(str(exc)) from exc
 
     def _validate_task_output(self, stage: str, output: dict[str, Any]) -> None:
         if stage == "challenge-parse":
@@ -673,11 +663,11 @@ class UsefulIdeaWorkflow:
 
 
 def inspect_run(run_dir: str | Path) -> dict[str, Any]:
-    return RunHub(run_dir).inspect()
+    return inspect_saved_run(run_dir)
 
 
 def validate_run(run_dir: str | Path) -> list[str]:
-    return RunHub(run_dir).validate()
+    return validate_saved_run(run_dir)
 
 
 def _nonempty(value: Any, label: str) -> str:

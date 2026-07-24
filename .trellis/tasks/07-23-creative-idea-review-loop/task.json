@@ -1,0 +1,32 @@
+{
+  "id": "creative-idea-review-loop",
+  "name": "creative-idea-review-loop",
+  "title": "Creative 创意工作流",
+  "description": "设计并实现从赛题解析到确定性 Idea 报告的 Creative 黑客松创意路线，其中只包含一个有界的人工策展阶段。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "percy",
+  "assignee": "percy",
+  "createdAt": "2026-07-23",
+  "completedAt": null,
+  "branch": "codex/creative-review-loop",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": "c15e0ce",
+  "pr_url": "https://github.com/west0nG/HackSome/pull/1",
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "真实 Hack the Rest smoke run 已通过 C0-C6 并停在 open human review；未伪造 C6 resolution 或 C7 Idea Card。",
+  "meta": {
+    "smoke_run_id": "creative-hack-the-rest-20260724-04",
+    "smoke_status": "waiting",
+    "smoke_task_count": 65,
+    "smoke_shortlist_count": 5,
+    "offline_test_count": 255
+  }
+}
