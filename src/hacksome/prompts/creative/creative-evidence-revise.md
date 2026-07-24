@@ -22,6 +22,14 @@ observable proof, share artifact, risk, scope, references, or the demo cut, but
 it cannot silently rewrite the source mechanism or use C6A to bypass a C4F
 reason.
 
+Preserve or strengthen every verified Demo-readiness boundary from the source:
+the cold-start 30-second path, required subsystems and integration surfaces,
+primary browser/device target, setup costs, riskiest technical assumption and
+falsifying spike, Hook-preserving fallback, and the actual ready-to-send share
+artifact. Novelty polish must not reintroduce a removed backend, second-device
+assumption, manual recording workflow, hidden operator, or unsupported
+permission/compatibility claim.
+
 Retain every standard Concept H2 and add exactly one non-empty H2 for:
 
 - `Evidence-informed Changes`

@@ -54,17 +54,25 @@ creative_prompt_catalog = PromptCatalog(
         _spec(C0_CHALLENGE_PARSE),
         _spec(C1_BRIEF_NORMALIZE),
         _spec(C2_TERRITORY_EXPLORE),
-        _spec(C3_CONCEPT_SYNTHESIZE),
-        _spec(C4_CHEAP_HOOK_REVIEW),
-        _spec(C4_SOFTWARE_DEMO_REVIEW),
-        _spec(C4_CHEAP_HOOK_REPAIR),
+        _spec(C3_CONCEPT_SYNTHESIZE, version="3"),
+        _spec(C4_CHEAP_HOOK_REVIEW, version="3"),
+        _spec(C4_SOFTWARE_DEMO_REVIEW, version="3"),
+        _spec(C4_CHEAP_HOOK_REPAIR, version="3"),
         _spec(C5M_MEMORY_RECALL),
         _spec(C5M_MEMORY_REMIX),
         _spec(C5W_NOVELTY_SCAN, web_search=True),
-        _spec(C6A_EVIDENCE_REVISE),
-        _spec(C6B_PORTFOLIO_CURATE),
+        _spec(C6A_EVIDENCE_REVISE, version="3"),
+        _spec(C6B_PORTFOLIO_CURATE, version="3"),
         _spec(C6C_FEEDBACK_REVISE),
-    )
+    ),
+    compatible_template_versions={
+        C3_CONCEPT_SYNTHESIZE: ("2",),
+        C4_CHEAP_HOOK_REVIEW: ("2",),
+        C4_SOFTWARE_DEMO_REVIEW: ("2",),
+        C4_CHEAP_HOOK_REPAIR: ("2",),
+        C6A_EVIDENCE_REVISE: ("2",),
+        C6B_PORTFOLIO_CURATE: ("2",),
+    },
 )
 
 

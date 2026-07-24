@@ -20,6 +20,14 @@ controller rejects any textual change inside them:
 Make the local repair only in the other standard sections. For example, clarify
 timing in `Setup, Reveal and Aftertaste` or `Minimum Hackathon Demo` without
 adding the timing detail to the preserved input/transformation/output section.
+When a review identifies Demo-readiness risk, use those mutable sections to
+make the cold-start 30-second path explicit, remove optional subsystems, name
+one primary browser/device target, expose permission or setup costs, state the
+single riskiest technical assumption and its early falsifying spike, and define
+a Hook-preserving fallback slice. When share friction is the issue, replace a
+hand-waved “record and share” claim with a concrete low-friction artifact or
+honestly narrow the claim. Do not invent extra people, time, services, prepared
+devices, or compatibility evidence to force a pass.
 
 The revised Markdown must retain every standard Concept H2:
 

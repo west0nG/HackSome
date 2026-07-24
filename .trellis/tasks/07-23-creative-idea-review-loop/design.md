@@ -11,7 +11,9 @@
 - C5M 历史灵感是一次性有界分支，不能递归，也不能绕过 C4/C5W。
 - software-first 是 Controller-owned 的 route policy，不是 Agent 可稀释的审美偏好；普通设备内置 I/O 合法，定制硬件、实体制作和纯人工装置核心自动淘汰。
 - C4 同时包含 C4H Hook/分享触发与 C4F Software Demo Feasibility 自动关卡，二者共享一次修复预算；C6 仍是唯一人工关卡。
+- C4F 不能只检查“软件/非硬件”合规；还要在保守参考预算下检查冷启动、关键路径复杂度、最高风险假设、降级切片、预置状态和目标环境可靠性。
 - C6B 只使用 categorical software-demo、surprise/fun、clarity、share-trigger、novelty evidence，不输出总分或排名。
+- 一句话复述和立即分享是独立判断；portfolio 多样性按核心机制而不只按 Territory 标签判断。
 - 每个修复、策展和反馈循环都有明确上限。
 - 最终报告由控制器确定性生成，允许零个最终 Idea，并逐项保留处置原因。
 - 只有已完成且验证通过的 Creative run 才产生可供未来运行读取的 Idea Memory Record。
@@ -666,6 +668,31 @@ CreativeWorkflowSettings(
 
 旧的纯 spatial/embodied/performance 与 wildcard cross-media lens 不进入 v2 默认列表；这些表现形式只有在软件真实读取输入、执行转换并产生可验证输出时才可作为某个 software-native lens 的呈现方式。
 
+当 C0 没有给出团队、时长和运行环境时，C3/C4/C6 Prompt 使用下列保守
+`Reference Implementation Budget`，但不新增 v2 JSON 字段：
+
+- 最多 2 人，在 24 小时内完成可现场运行的最小 cut；
+- 只承诺一个主要浏览器/设备切片，例如普通 laptop 的一个现代浏览器，或一台
+  普通手机的一个浏览器；跨浏览器、跨桌面/手机和双设备同步都不是默认免费能力；
+- 最多一个简单 backend：一个可部署进程中的轻量状态、生成或实时 endpoint，
+  不包含多服务编排、复杂账号系统、异步数据管线或专门运维；
+- 关键路径最多三个独立子系统。这里的“子系统”指需要分别实现、配置、部署或
+  调试，且可以独立让 Demo 失败的边界；同一 backend 内的 route 不重复计数，
+  browser client、backend、外部模型/API 或第二设备协同分别计数；
+- 必须指出一个最危险技术假设，以及能在开工前两小时内给出可证伪结果的最小
+  probe；还必须给出该假设失败后的降级切片。降级切片可以降低效果质量，但仍要
+  保留真实 input → executable transformation → observable output 和核心 reveal；
+- 必须枚举预置状态及成本：账号/权限、房间和种子数据、模型下载或预热、第二设备
+  配对、预先录制/整理内容、部署和现场人工动作。自动脚本也要计入准备时间，
+  人工隐藏劳动不能记作零成本。
+
+C0 的显式硬约束优先于该 fallback：更紧的预算必须收紧，明确且可信的更大团队/
+更长赛时可以替换参考数字，但 Creative Brief 不能单独放宽它。这个 block 只收紧
+Prompt 对既有 v2 sections 的解释，不改变 frozen `SoftwareDemoPolicy` 的字节、
+Schema、reason code、route-level prompt policy version 或旧 run 的解释。六个
+受影响 stage 的 Prompt template version 从 v2 前进到 v3，并把 v2 声明为兼容
+资源；已经创建的 v2 run 继续使用其持久化 Prompt 字节与资源版本。
+
 ## 9. C0-C7 阶段合同
 
 ### 9.1 统一输出 Envelope
@@ -830,9 +857,27 @@ Concept 必需 H2：
 `Software Core and Runtime` 必须包含运行入口、主要 code/model/API/protocol、
 真实 input 取得方式、executable transformation、observable output 与外部依赖。
 `Share Trigger and Artifact` 必须说明立即分享冲动、实际分享的 URL/录屏/结果/
-挑战/remix，以及明确的人群；单写“有传播性”无效。`Minimum Hackathon Demo`
-必须给出比赛时间内的最小 build cut、操作步骤、真实依赖、最难技术点和可观察
-验收证据，不能用 Figma、预录视频、人工选择或 mock API 代替核心机制。
+挑战/remix，以及明确的人群；单写“有传播性”无效。若唯一传播路径是用户手工
+开始录屏、裁剪、上传再解释，必须把这些动作和耗时写出，不能把“系统允许录屏”
+等同于低摩擦 share trigger。
+
+`Minimum Hackathon Demo` 必须给出比赛时间内的最小 build cut，并按固定顺序写清：
+
+1. 从打开 URL/运行入口开始，到首个有感受输出为止的冷启动步骤与总时长；必要
+   permission prompt、首个真实 input、模型 warm-up、room join 和设备 pairing
+   都在约 30 秒时钟内；
+2. 关键路径子系统列表与 `subsystem_count`；无 C0 明示预算时按第 8 节的最多三个
+   子系统、一个简单 backend、一个主要浏览器/设备切片判断；
+3. 唯一 `riskiest_technical_assumption`、两小时内的 falsification probe、成功
+   证据和失败后的 degraded slice；
+4. 每项预置状态、自动/人工动作和分钟成本；部署前准备可以列在 30 秒时钟之外，
+   但仍计入 build/operation budget，不能从 Concept 中省略；
+5. 现场验收证据。
+
+提到 `getUserMedia`、MediaRecorder、Web Audio、WebSocket、Canvas 或模型 SDK
+不构成可实现性证明；Concept 还要说明目标 browser/device、secure-context/
+permission/user-gesture 要求、预期延迟、输入质量边界和失败路径。不能用 Figma、
+预录视频、人工选择或 mock API 代替核心机制。
 
 每个 Concept envelope 还必须返回 `primary_territory_ref`。四个 synthesizer 都能看到完整 Atom index，但各自收到不同、持久化的 synthesis lens。模型不能自行创建稳定 ID；semantic validator 要求 `primary_territory_ref` 对应至少一个 Parent Atom 的 Territory。它一经发布就属于 Concept identity metadata，后续 reviewer/curator 不能改写。
 
@@ -861,6 +906,11 @@ Concept 必需 H2：
 5. 是否无需长篇解释即可复述；
 6. 是否不依赖隐藏人工、不可能权限或虚假能力；
 7. 是否存在具体、立即、可解释且有实际 artifact 的分享触发，而不是抽象宣称 viral。
+
+第 4 项从用户打开真实入口开始计时，包含权限、首个输入、配对和 warm-up；不能从
+已经预置好的“完美 reveal 前一秒”开始。第 5、7 项必须分别给 evidence 和 verdict：
+一句话复述通过不能推导分享通过。若分享仍需要手工录屏、裁剪、上传和补充解释，
+reviewer 应按真实步骤评估摩擦；仅写“可录屏”不足以通过第 7 项。
 
 每个非 `pass` 维度还必须返回与顺序一一对应的稳定原因码：
 
@@ -891,6 +941,27 @@ Concept 必需 H2：
 
 `invalid` 只用于 Concept 原文明示的硬失败；信息不足或可以缩小 Demo cut 澄清
 时必须是 `repairable`。使用普通设备内置 I/O 不能单独触发 hardware failure。
+
+C4F 的职责分成两层，两层都通过才可输出 `overall_decision=pass`：
+
+1. **路线合规：** software-first、非定制硬件、非人工/装置核心、非 mock；
+2. **参考实现可交付：** 冷启动路径可信，关键路径在预算内，最高风险假设可先行
+   证伪，降级切片仍证明核心机制，预置状态可重复创建，目标环境依赖可稳定取得。
+
+第二层按下列机械映射复用现有七维 shape/reason code：
+
+| 新检查 | 归属现有维度 | 非通过时沿用的 reason code |
+| --- | --- | --- |
+| 冷启动步骤缺失，或真实输入到输出的 30 秒路径断裂 | `end_to_end_demo_path` | `no_runnable_end_to_end_demo_path` |
+| 超过参考子系统/backend/device 预算，最高风险假设不可快速证伪，或没有仍能证明核心的降级切片 | `hackathon_scope` | `not_buildable_within_hackathon_budget` |
+| 预置账号、数据、预热、配对或人工准备不可重复，或成本超出预算 | `hackathon_scope`；若依赖权限不可得则同时看 `dependency_integrity` | `not_buildable_within_hackathon_budget` / `requires_unavailable_dependency_or_permission` |
+| 只列标准 Web API/SDK 名称，没有目标环境、permission、secure context、延迟和失败证据 | `dependency_integrity` | `requires_unavailable_dependency_or_permission` |
+| 降级后只剩录屏、假数据或人工代劳，不能证明核心机制 | `core_proof` | `demo_does_not_prove_core_mechanism` |
+
+信息缺失时这些维度为 `uncertain` 且整体为 `repairable`；Concept 已明确超出预算、
+目标环境明确不支持，或失败后只能 mock 核心时才为 `fail/invalid`。因此“标准 API
+存在”本身永远不足以得到 `pass`，但也不会因为 reviewer 没看到细节就被误判成
+硬失败。
 
 三份独立 review 的 Controller 聚合：
 
@@ -1156,6 +1227,23 @@ Agent 可以澄清 software runtime、依赖、最小 Demo cut、现场可观察
 `primary_territory_ref`，不得输出 1–10 总分或全排序。Controller 只使用
 Concept metadata 中已经验证的 primary territory，且输入池只能包含 C4F pass
 项。
+
+五个维度彼此独立：`one_sentence_clarity=pass` 不能推导
+`immediate_share_trigger=pass`；后者必须把手工录屏、剪辑、上传、复制链接和
+额外解释作为真实摩擦。`software_demo_strength` 必须复核第 8 节参考预算和 C4F
+证据，不能因出现标准 Web API 名称而通过。
+
+每位 curator 还要在整个候选池中按四元组建立机制族：
+
+```text
+(audience input, executable transformation, reveal structure, share artifact/loop)
+```
+
+如果两个候选在其中至少三项实质相同，仅更换主题、视觉皮肤、文案或 Territory
+标签，则必须互相写入现有 duplicate refs；`novel_combination` 只能让其中机制/
+体验证据最完整的代表项通过，其余至少为 `uncertain`。两个 curator 可以独立选择
+不同代表，Controller 仍只聚合 categorical decision，不新增语义聚类器或自动
+合并。Territory round-robin 是第二层多样性，不能覆盖这个机制级判断。
 
 控制器按以下确定性规则生成最多 8 个候选：
 
@@ -1938,21 +2026,27 @@ Importer 验证 benchmark ID、packet hash、case 完整性、每个 blind Idea 
 - 合法 Concept 数；
 - 机制不同的 Territory/Atom 数；
 - C3 software-first 合格率与端到端 Demo path 完整率；
+- C3 冷启动 30 秒路径、关键子系统计数、最高风险假设/两小时 probe、降级切片和
+  预置状态成本的完整率；
 - C4H/C4F `pass|repairable|invalid`、修复、淘汰矩阵和七类 feasibility reason 分布；
 - 定制硬件/纯装置/伪技术 fixture false-pass、合法普通设备 I/O false-reject；
+- 只罗列标准 Web API 但权限/兼容/延迟不成立的 false-pass，以及手工录屏被误判为
+  立即分享的 false-pass；
 - 完整 C4 screen 后的 C5W task 数及相对 v1 的 token/wall-time 变化；
 - memory 来源/跳过诊断、selected cues、challenger 数、challenger 通过率与 copy-reject 数；
 - memory challenger 的 C4F 通过率与旧硬件/装置模式再引入率；
 - 有效 source URL 和碰撞类型；
 - C6B `immediate_share_trigger=pass` 占比及 categorical decision 一致性；
+- C6B 的复述/分享 verdict 独立性、duplicate refs 覆盖率、shortlist 机制族数量与
+  最大机制族占比；
 - lineage 覆盖；
 - 报告确定性；
 - token 与时间。
 
 人工 worksheet：
 
-- 30 秒后一句话复述是否准确；
-- 是否立刻想到具体分享对象；
+- 冷启动约 30 秒后一句话复述是否准确；
+- 在不向 reviewer 暴露复述答案的独立问题中，是否立刻想到具体分享对象；
 - `share_impulse=immediate` 且有具体分享对象的比例；
 - 惊喜来自机制还是困惑；
 - 是否想亲自互动或看别人反应；
@@ -1962,7 +2056,9 @@ Importer 验证 benchmark ID、packet hash、case 完整性、每个 blind Idea 
 `share_impulse` 与 `demo_confidence` 仍是 Idea 阶段代理指标，不能被报告为真实
 传播率或构建成功率。离线 fixture 至少覆盖 software/WebSocket 正例、内置 I/O
 正例、定制硬件反例、纯装置反例、mock/预录反例、不可得权限反例、可修复的
-Demo cut 缺失和可运行但无 share trigger 的弱 viral 例。
+Demo cut 缺失、标准 Web API 兼容/权限陷阱、预置状态超预算、无降级切片、
+手工录屏高摩擦分享、跨 Territory 但核心机制重复，以及可运行但无 share trigger
+的弱 viral 例。
 
 默认单元测试不联网、不调用 Codex。实际 benchmark 必须显式运行，Percy 后续提供 Challenge 后再填真实结果。
 

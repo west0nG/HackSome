@@ -9,14 +9,20 @@ from jsonschema import Draft202012Validator
 
 from hacksome.creative.contracts import (
     C3_CONCEPT_SYNTHESIZE,
+    C4_CHEAP_HOOK_REPAIR,
+    C4_CHEAP_HOOK_REVIEW,
+    C4_SOFTWARE_DEMO_REVIEW,
     C5M_MEMORY_RECALL,
     C5W_NOVELTY_SCAN,
+    C6A_EVIDENCE_REVISE,
+    C6B_PORTFOLIO_CURATE,
     CREATIVE_STAGES,
     CREATIVE_CONTRACT_VERSION,
     CREATIVE_PROMPT_POLICY_VERSION,
     CREATIVE_STAGE_POLICY_VERSION,
 )
 from hacksome.creative.prompting import creative_prompt_catalog
+from hacksome.prompting import PromptCatalog, PromptSpec
 
 
 class CreativePromptCatalogTests(unittest.TestCase):
@@ -34,10 +40,21 @@ class CreativePromptCatalogTests(unittest.TestCase):
         )
 
     def test_every_versioned_resource_exists_and_schema_is_valid(self) -> None:
+        stricter_template_stages = {
+            C3_CONCEPT_SYNTHESIZE,
+            C4_CHEAP_HOOK_REPAIR,
+            C4_CHEAP_HOOK_REVIEW,
+            C4_SOFTWARE_DEMO_REVIEW,
+            C6A_EVIDENCE_REVISE,
+            C6B_PORTFOLIO_CURATE,
+        }
         for stage in CREATIVE_STAGES:
             with self.subTest(stage=stage):
                 spec = creative_prompt_catalog[stage]
-                self.assertEqual(spec.version, "2")
+                self.assertEqual(
+                    spec.version,
+                    "3" if stage in stricter_template_stages else "2",
+                )
                 self.assertEqual(
                     spec.template_id,
                     f"hacksome.creative.{stage.removeprefix('creative-')}",
@@ -68,6 +85,55 @@ class CreativePromptCatalogTests(unittest.TestCase):
             )
             self.assertIn(C5M_MEMORY_RECALL, frozen.catalog)
             self.assertIn("creative-feedback-revise", frozen.catalog)
+
+    def test_stricter_templates_accept_frozen_v2_resources(self) -> None:
+        stricter_template_stages = {
+            C3_CONCEPT_SYNTHESIZE,
+            C4_CHEAP_HOOK_REPAIR,
+            C4_CHEAP_HOOK_REVIEW,
+            C4_SOFTWARE_DEMO_REVIEW,
+            C6A_EVIDENCE_REVISE,
+            C6B_PORTFOLIO_CURATE,
+        }
+        old_catalog = PromptCatalog(
+            tuple(
+                PromptSpec(
+                    stage=stage,
+                    template_id=spec.template_id,
+                    version=(
+                        "2"
+                        if stage in stricter_template_stages
+                        else spec.version
+                    ),
+                    template_path=spec.template_path,
+                    schema_path=spec.schema_path,
+                    web_search=spec.web_search,
+                )
+                for stage in creative_prompt_catalog
+                for spec in (creative_prompt_catalog[stage],)
+            )
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            frozen = old_catalog.freeze(
+                run_dir,
+                route_id="creative",
+                contract_version=CREATIVE_CONTRACT_VERSION,
+                prompt_policy_version=CREATIVE_PROMPT_POLICY_VERSION,
+                stage_policy_version=CREATIVE_STAGE_POLICY_VERSION,
+            )
+            loaded = creative_prompt_catalog.load_frozen(
+                run_dir,
+                route_id="creative",
+                contract_version=CREATIVE_CONTRACT_VERSION,
+                prompt_policy_version=CREATIVE_PROMPT_POLICY_VERSION,
+                stage_policy_version=CREATIVE_STAGE_POLICY_VERSION,
+                manifest_sha256=frozen.manifest_sha256,
+            )
+
+        for stage in stricter_template_stages:
+            with self.subTest(stage=stage):
+                self.assertEqual(loaded[stage].version, "2")
 
     def test_early_prompts_forbid_history_scanning_and_c5m_is_untrusted(self) -> None:
         c3 = creative_prompt_catalog.render(

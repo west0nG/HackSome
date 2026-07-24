@@ -51,6 +51,12 @@
   v1 waiting run 的 disposable copy 上提交 v1 receipt、关闭 resolution、
   执行一次 C6C revise 并 resume 到 completed，最终离线 validation 通过；
   原始 v1 run 未改。
+- 新的真实 v2 smoke 已给出一条阶段性结论：C2/C3 已稳定转向 browser/software
+  Concept，定制硬件和纯装置方向没有回流；但首批 12 个 Concept 的 C4F 均为
+  `pass`，其中仍有多子系统、浏览器 API/权限假设、预置状态和手工录屏分享摩擦
+  没有被保守审查。说明 v2 已解决“媒介合规”，尚未证明 C4F 能区分“两人一天
+  能否稳定跑出 Demo”。最终 run 数字和候选结果只写入独立 smoke report，本节
+  不把阶段性观察冒充完整 benchmark。
 - 待完成：新的真实 v2 route smoke、正式 C6 团队评审、完整浏览器/LAN QA 与
   在线双臂 benchmark；不能用 mock、离线 evaluator 或 plan-only CLI 结果替代。
 - 工作区存在与本任务无关的 Trellis 升级/onboarding 改动；提交必须使用精确
@@ -96,6 +102,59 @@ Idea Memory、finalization 和 C6 唯一人工关卡合同继续有效。
   checks，并用新真实 challenge 至少跑到 C6 或合法空 batch；当前离线门禁已
   通过，wheel 已构建并确认包含 v2 Prompt/Schema/UI；完整浏览器 QA 与新 v2
   real run 尚待完成，旧 v1 smoke 不计。
+
+### 0.3 真实 v2 smoke 后的 Prompt-only 收紧（2026-07-24）
+
+本轮只调整现有 v2 Prompt 对既有字段的判定强度，不新增 stage、artifact H2、
+JSON 字段、enum 或 reason code，不提升 Creative contract version，也不改变
+frozen v1/v2 run 的 loader/validator 分派。四个受影响 stage 的 Prompt template
+version 为新 run 前进，route-level prompt policy version 保持 v2；已经创建的
+v2 run 继续使用持久化字节。实现必须保持以下映射：
+
+- 冷启动约 30 秒失败继续使用 C4H
+  `misses_thirty_second_moment`；真实端到端路径缺失继续使用 C4F
+  `no_runnable_end_to_end_demo_path`。
+- 子系统/backend/device 超预算、最高风险假设不可快速证伪、没有可用降级切片或
+  预置状态过重，继续归入 `hackathon_scope` /
+  `not_buildable_within_hackathon_budget`。
+- 标准 Web API/SDK 的 permission、secure-context、兼容、时延或可得性没有证据，
+  继续归入 `dependency_integrity` /
+  `requires_unavailable_dependency_or_permission`；信息不足先
+  `uncertain/repairable`，明确不可用才 `fail/invalid`。
+- 手工录屏、剪辑、上传和额外解释造成的传播摩擦，继续归入 C4H
+  `no_immediate_share_trigger` 和 C6B `immediate_share_trigger`，不新建分享
+  reason code。
+- 跨候选机制同质化继续使用 C6B `novel_combination` 与既有 duplicate refs；
+  Controller 不新增语义聚类器，不改变 shortlist JSON shape。
+
+实施清单：
+
+- [x] 收紧 `creative-concept-synthesize.md`：当 C0 没有明确资源时注入 2 人/
+  24 小时、一个简单 backend、一个主要浏览器/设备切片、最多三个关键子系统的
+  参考预算；要求在现有 `Minimum Hackathon Demo` 中写冷启动路径、子系统列表、
+  唯一最高风险假设、两小时 probe、降级切片和预置状态分钟成本。
+- [x] 收紧 `creative-cheap-hook-review.md`：30 秒从打开真实入口开始，包含权限、
+  首个输入、配对和 warm-up；一句话复述与立即分享分别取证，不能用“可以手工
+  录屏”直接通过分享维度。
+- [x] 收紧 `creative-software-demo-review.md`：在 software-first 合规之外，
+  按现有 `end_to_end_demo_path`、`dependency_integrity`、`hackathon_scope` 和
+  `core_proof` 审查参考预算、目标环境可靠性、最高风险假设/降级和预置成本；
+  API 名称本身不是 pass evidence。
+- [x] 收紧 `creative-cheap-hook-repair.md` 与 `creative-evidence-revise.md`：
+  只允许在既有可变 sections 中缩小 Demo cut、减少子系统、补可证伪 probe、
+  降级路径和低摩擦 share artifact，仍逐字保留三个 identity sections。
+- [x] 收紧 `creative-portfolio-curate.md`：五个 categorical dimensions 独立；
+  按 `(input, transformation, reveal, share loop)` 比较整个候选池，跨 Territory
+  的机制重复也写既有 duplicate refs，并在 `novel_combination` 体现。
+- [ ] 增加 Prompt snapshot/semantic fixture，覆盖 30 秒冷启动、四子系统超预算、
+  标准 Web API 权限陷阱、预置状态、无降级、手工录屏高摩擦、retell-pass 但
+  share-fail、跨 Territory 同机制；断言 v2 Schema 与所有 reason enum 字节不变。
+- [x] 将 C3/C4H/C4F/C4R/C6A/C6B Prompt template 提升到 v3，并把 v2 登记为可兼容加载；
+  route-level prompt policy 继续为 v2。旧 v2 run 的 persisted Prompt/schema
+  path 仍可离线 validate/resume，新 template version 只用于新建 run。
+- [ ] 完整重跑 Creative/Useful tests、ruff、mypy、compileall、wheel resource
+  inspection；再用相同 challenge 新建 run 对照 C4F/C6B 分布，不能重解释或覆盖
+  已冻结 smoke run。
 
 ## 1. Preflight 与基线
 

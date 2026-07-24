@@ -21,7 +21,7 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "真实 Hack the Rest smoke run 是 frozen Creative contract v1，已通过 C0-C6 并停在 open human review；其五项偏装置 shortlist 只作为问题基线，不是 software-first v2 benchmark。software-first v2 业务代码、Prompt/Schema、C4F、C6 页面与离线质量门已完成；真实 v1 waiting run 的副本已完成 receipt/resolution/resume 回归，原 run 未改。尚待新的真实 v2 route smoke、正式团队评审与在线 benchmark；未伪造原 run 的 C6 resolution 或 C7 Idea Card。",
+  "notes": "Hack the Rest 已完成 frozen v1 与 software-first v2 两次真实 C0-C6 run，均停在 open human review，未伪造 resolution 或 C7 Idea Card。v2 的 12 个 Concept 全部转为普通浏览器软件，0 个定制硬件或纯装置核心，shortlist 为 8；但 C4F 13/13 pass 暴露冷启动、集成复杂度、预置状态和传播摩擦判据偏松。C3/C4H/C4F/C4R/C6A/C6B Prompt template 已前进到 v3，保持 v2 JSON/route policy 并兼容冻结 template v2。尚待打开 v2 C6 页面、真实团队评审、同题 template v3 对照和在线 benchmark。",
   "meta": {
     "smoke_run_id": "creative-hack-the-rest-20260724-04",
     "smoke_status": "waiting",
@@ -31,7 +31,13 @@
     "offline_test_count": 263,
     "offline_test_contract_version": "2",
     "software_first_contract_target": "2",
-    "software_first_status": "implementation_validated_real_smoke_pending",
+    "software_first_status": "real_smoke_waiting_prompt_v3_followup_pending",
+    "software_first_smoke_run_id": "creative-hack-the-rest-v2-20260724-01",
+    "software_first_smoke_status": "waiting",
+    "software_first_smoke_task_count": 78,
+    "software_first_smoke_shortlist_count": 8,
+    "software_first_smoke_c4f_pass_count": 13,
+    "software_first_prompt_template_version": "3",
     "legacy_v1_resume_regression": "passed_on_disposable_copy",
     "baseline_pr_url": "https://github.com/west0nG/HackSome/pull/1",
     "baseline_merge_commit": "2289b84"

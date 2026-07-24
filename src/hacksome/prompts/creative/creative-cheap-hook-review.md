@@ -30,9 +30,21 @@ every non-pass uses the matching stable code:
 - `requires_hidden_labor_or_impossible_capability`
 - `share_trigger_not_immediate_or_concrete`
 
+For `one_sentence_retell`, do not quote, copy, or lightly rearrange the
+Concept's `One-sentence Hook`. In that dimension's evidence, write
+`Reviewer retell:` followed by your own one-sentence reconstruction from the
+full setup → audience action → mechanism → reveal, then write `Deviation:` and
+explain what your retell lost, changed, or could not resolve. Pass only when
+this independent retell preserves the actual mechanism and reveal without
+extra explanation.
+
 `share_trigger` passes only when the Concept names an immediate, concrete
 reason and artifact for sharing with a plausible recipient; a generic claim
-that it is social or viral does not pass.
+that it is social or viral does not pass. Judge this independently rather than
+copying the Concept's `Share Trigger and Artifact`: identify what the recipient
+actually receives, why that person would open or continue it, and what actions
+or friction stand between the experience and the handoff. A creator saying
+“people will share this” is not recipient-side evidence.
 
 Use `pass` overall only when all seven dimensions pass. The review Markdown has
 one H1 and explains the strongest evidence. Do not inspect run history.
