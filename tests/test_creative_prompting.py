@@ -7,6 +7,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
+from hacksome.creative.artifacts import CONCEPT_HEADINGS
 from hacksome.creative.contracts import (
     C3_CONCEPT_SYNTHESIZE,
     C4_CHEAP_HOOK_REPAIR,
@@ -40,8 +41,10 @@ class CreativePromptCatalogTests(unittest.TestCase):
         )
 
     def test_every_versioned_resource_exists_and_schema_is_valid(self) -> None:
-        version_four_stages = {
+        version_five_stages = {
             C3_CONCEPT_SYNTHESIZE,
+        }
+        version_four_stages = {
             C6A_EVIDENCE_REVISE,
             C6B_PORTFOLIO_CURATE,
         }
@@ -56,7 +59,9 @@ class CreativePromptCatalogTests(unittest.TestCase):
                 self.assertEqual(
                     spec.version,
                     (
-                        "4"
+                        "5"
+                        if stage in version_five_stages
+                        else "4"
                         if stage in version_four_stages
                         else "3"
                         if stage in version_three_stages
@@ -185,6 +190,45 @@ class CreativePromptCatalogTests(unittest.TestCase):
             with self.subTest(stage=stage):
                 self.assertEqual(loaded[stage].version, "3")
 
+    def test_c3_format_guard_accepts_frozen_v4_resource(self) -> None:
+        old_catalog = PromptCatalog(
+            tuple(
+                PromptSpec(
+                    stage=stage,
+                    template_id=spec.template_id,
+                    version=(
+                        "4"
+                        if stage == C3_CONCEPT_SYNTHESIZE
+                        else spec.version
+                    ),
+                    template_path=spec.template_path,
+                    schema_path=spec.schema_path,
+                    web_search=spec.web_search,
+                )
+                for stage in creative_prompt_catalog
+                for spec in (creative_prompt_catalog[stage],)
+            )
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            frozen = old_catalog.freeze(
+                run_dir,
+                route_id="creative",
+                contract_version=CREATIVE_CONTRACT_VERSION,
+                prompt_policy_version=CREATIVE_PROMPT_POLICY_VERSION,
+                stage_policy_version=CREATIVE_STAGE_POLICY_VERSION,
+            )
+            loaded = creative_prompt_catalog.load_frozen(
+                run_dir,
+                route_id="creative",
+                contract_version=CREATIVE_CONTRACT_VERSION,
+                prompt_policy_version=CREATIVE_PROMPT_POLICY_VERSION,
+                stage_policy_version=CREATIVE_STAGE_POLICY_VERSION,
+                manifest_sha256=frozen.manifest_sha256,
+            )
+
+        self.assertEqual(loaded[C3_CONCEPT_SYNTHESIZE].version, "4")
+
     def test_early_prompts_forbid_history_scanning_and_c5m_is_untrusted(self) -> None:
         c3 = creative_prompt_catalog.render(
             C3_CONCEPT_SYNTHESIZE,
@@ -220,6 +264,17 @@ class CreativePromptCatalogTests(unittest.TestCase):
         c3 = creative_prompt_catalog[
             C3_CONCEPT_SYNTHESIZE
         ].template_path.read_text(encoding="utf-8")
+        heading_contract = c3.split(
+            "Every Concept Markdown has one H1 and exactly one non-empty H2 for:",
+            1,
+        )[1].split("Keep each complete Concept concise enough", 1)[0]
+        listed_headings = tuple(
+            line.removeprefix("- `").removesuffix("`")
+            for line in heading_contract.splitlines()
+            if line.startswith("- `") and line.endswith("`")
+        )
+        self.assertEqual(listed_headings, CONCEPT_HEADINGS)
+
         evidence = creative_prompt_catalog[
             C6A_EVIDENCE_REVISE
         ].template_path.read_text(encoding="utf-8")
@@ -233,6 +288,13 @@ class CreativePromptCatalogTests(unittest.TestCase):
             "six degrees between any two people or characters",
             "realtime Jam partner",
             "Do not propose a six-degrees/relationship-path concept",
+            "target\n650-900 words",
+            "all twelve required H2 headings occur exactly once",
+            "the final H2 is a non-empty `## Parent Atoms`",
+            "every ref in `parent_atom_refs` appears in that H2",
+            "`primary_territory_ref` belongs to at least one of those Parent Atoms",
+            "does not replace the Markdown\n`## Parent Atoms` section",
+            "Return fewer Concepts when necessary",
         ):
             with self.subTest(prompt="c3", marker=marker):
                 self.assertIn(marker, c3)

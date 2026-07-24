@@ -699,6 +699,13 @@ Schema、reason code、route-level prompt policy version 或旧 run 的解释。
 allowlist；v2 兼容项继续保留。route-level policy、Schema、reason code 与
 既有 v2/v3 frozen run 均不重解释。
 
+首次真实 v4 smoke 在 C3 暴露了输出完整性问题：一个合法 JSON 内的第二篇
+Concept 漏掉最后的 `Parent Atoms` H2，Controller 正确 fail-closed。修复不
+放宽 validator，也不修改已冻结 v4 字节；只有
+`creative-concept-synthesize` 前进到 v5，并把 v4 加入兼容 allowlist。v5
+要求单篇保持简洁，返回前机械自检全部十二个 H2、末尾 `Parent Atoms` 与
+结构化 refs；必要时宁可少返回 Concept，也不能由 Controller 猜测补写。
+
 ## 9. C0-C7 阶段合同
 
 ### 9.1 统一输出 Envelope

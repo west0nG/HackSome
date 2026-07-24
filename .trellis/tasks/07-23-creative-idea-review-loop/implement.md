@@ -179,6 +179,11 @@ v2 run 继续使用持久化字节。实现必须保持以下映射：
 payload。C3/C6A/C6B Prompt template 前进到 v4，并把 v3 加入显式历史
 allowlist；已创建 run 继续使用自身冻结的 v2/v3 bytes。
 
+首次真实 v4 smoke 在 C3 fail-closed：一篇过长输出漏掉末尾
+`Parent Atoms` H2。该失败 run 保持原样；C3 单独前进到 v5 并兼容 frozen
+v4，加入 650–900 词目标与返回前机械 H2/ref 自检，不放宽 validator、不由
+Controller 补写模型正文。
+
 Prompt / Controller：
 
 - [x] 收紧 `creative-concept-synthesize.md`：在既有 sections 中强制三句
@@ -196,6 +201,8 @@ Prompt / Controller：
   没有第二次玩法或真实使用欲望的“展厅概念”。
 - [x] 增加 Prompt/Workflow 回归：两个 lens 均存在且互不相同、五维/决策关系
   不变、v3 可兼容加载、Schema/reason enum 字节不变。
+- [x] 首次真实 smoke 暴露 C3 末尾 H2 遗漏后，将 C3 提升至 v5；限制单篇篇幅、
+  强制逐项检查十二个 H2/`Parent Atoms`/refs，并覆盖 frozen v4 兼容加载。
 
 Reviewer UI：
 

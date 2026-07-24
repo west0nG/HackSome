@@ -26,6 +26,11 @@ Every Concept Markdown has one H1 and exactly one non-empty H2 for:
 - `Assumptions, Confusion and Risks`
 - `Parent Atoms`
 
+Keep each complete Concept concise enough to finish the contract: target
+650-900 words across all twelve H2 sections, prefer short paragraphs or bullets,
+and never omit a required H2 to spend more words on atmosphere or optional
+polish.
+
 `Software Core and Runtime` must identify the runnable entry point, ordinary
 device/runtime, executable code/model/API/protocol, real input acquisition,
 transformation, observable output, and external dependencies. Separate required
@@ -111,3 +116,15 @@ hardware, fabrication, pure installation/performance, wizard-of-oz operation,
 Figma-only flow, a pre-recorded substitute, or unavailable data/permissions.
 Do not assign Concept IDs or revisions. Do not
 browse the web or inspect run history.
+
+Before returning JSON, perform this mechanical check independently for every
+Concept:
+
+- all twelve required H2 headings occur exactly once;
+- the final H2 is a non-empty `## Parent Atoms`;
+- every ref in `parent_atom_refs` appears in that H2 and no other Atom ref does;
+- `primary_territory_ref` belongs to at least one of those Parent Atoms.
+
+The structured `parent_atom_refs` field does not replace the Markdown
+`## Parent Atoms` section. Return fewer Concepts when necessary to complete
+every Concept contract exactly.
