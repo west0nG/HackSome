@@ -14,7 +14,7 @@
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
 | [Useful Idea 工作流合同](./agent-workflow-contracts.md) | Useful route 的 Prompt、Hub、绝对 gate 与 Idea Card | Active |
-| [Creative Idea 工作流合同](./creative-agent-workflow-contracts.md) | Creative C0–C7、Idea Memory、C6 人审与确定性发布 | Active |
+| [Creative Idea 工作流合同](./creative-agent-workflow-contracts.md) | Creative C0–C7、software-first Demo gate、Idea Memory、C6 唯一人审与确定性发布 | Active |
 
 新规范应记录代码中的实际合同，而不是愿望；必须包含签名、验证/错误、正反例和
 测试断言。Percy 的协作文档默认使用中文，代码标识符和外部协议名保留原文。
