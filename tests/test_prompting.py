@@ -26,7 +26,7 @@ class PromptingTests(unittest.TestCase):
             "creative-territory-explore"
         ].template_path.read_text(encoding="utf-8")
 
-        self.assertIn("Use those eight H2 headings verbatim", template)
+        self.assertIn("Use those nine H2 headings verbatim", template)
         self.assertIn("Do not\ncompress them into one section", template)
         for heading in (
             "Territory",
@@ -36,6 +36,7 @@ class PromptingTests(unittest.TestCase):
             "Transformation",
             "Reveal",
             "Aftertaste",
+            "Software Surface and Demo Proof",
             "Challenge Fit and Risks",
         ):
             self.assertEqual(template.count(f"## {heading}\n"), 1)

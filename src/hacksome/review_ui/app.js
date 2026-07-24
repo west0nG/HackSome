@@ -12,6 +12,16 @@ const REACTION_LABELS = {
 };
 const REACTION_VALUES = ["yes", "maybe", "no"];
 const REACTION_VALUE_LABELS = { yes: "是", maybe: "也许", no: "否" };
+const SHARE_IMPULSE_LABELS = {
+  immediate: "会立刻点开 / 转发 / 拉人来试",
+  maybe: "也许会分享",
+  no: "不会分享",
+};
+const DEMO_CONFIDENCE_LABELS = {
+  yes: "相信比赛时间内能跑起来",
+  maybe: "对 Demo 可行性不确定",
+  no: "不相信比赛时间内能跑起来",
+};
 
 const state = {
   snapshot: null,
@@ -83,6 +93,10 @@ function safeRemoveStorage(key) {
 
 function getRound() {
   return asObject(asObject(state.snapshot).round);
+}
+
+function reviewSchemaVersion() {
+  return Number(asObject(state.snapshot).schema_version) === 1 ? 1 : 2;
 }
 
 function getConcepts() {
@@ -170,6 +184,7 @@ async function registerReviewerSession() {
 
 function emptyDraft() {
   return {
+    schema_version: reviewSchemaVersion(),
     round_sha256: text(getRound().sha256),
     review_id: randomId(),
     reviewer_name: text(state.profile.reviewer_name),
@@ -177,6 +192,22 @@ function emptyDraft() {
     pairwise: {},
     overall_comment: "",
   };
+}
+
+function normalizeConceptDraft(value) {
+  const draft = asObject(value);
+  if (reviewSchemaVersion() >= 2) {
+    if (!["immediate", "maybe", "no"].includes(draft.share_impulse)) {
+      draft.share_impulse = "maybe";
+    }
+    if (!["yes", "maybe", "no"].includes(draft.demo_confidence)) {
+      draft.demo_confidence = "maybe";
+    }
+  } else {
+    delete draft.share_impulse;
+    delete draft.demo_confidence;
+  }
+  return draft;
 }
 
 function loadDraft() {
@@ -193,10 +224,17 @@ function loadDraft() {
     byId("submit-review").disabled = true;
     return;
   }
+  const conceptReviews = Object.fromEntries(
+    Object.entries(asObject(saved.concept_reviews)).map(([ref, review]) => [
+      ref,
+      normalizeConceptDraft(review),
+    ]),
+  );
   state.draft = {
     ...emptyDraft(),
     ...saved,
-    concept_reviews: asObject(saved.concept_reviews),
+    schema_version: reviewSchemaVersion(),
+    concept_reviews: conceptReviews,
     pairwise: asObject(saved.pairwise),
   };
 }
@@ -205,6 +243,7 @@ function saveDraft() {
   if (!state.draft || state.staleDraft) {
     return;
   }
+  state.draft.schema_version = reviewSchemaVersion();
   state.draft.round_sha256 = text(getRound().sha256);
   safeWriteStorage(DRAFT_KEY, state.draft);
 }
@@ -276,6 +315,16 @@ function renderConcept() {
     "setup_reveal_aftertaste",
   );
   byId("concept-mechanism").textContent = fieldText(concept, "core_mechanism", "mechanism");
+  byId("concept-software-core").textContent = fieldText(
+    concept,
+    "software_core_and_runtime",
+    "core_mechanism",
+    "mechanism",
+  );
+  byId("concept-share-trigger").textContent = fieldText(
+    concept,
+    "share_trigger_and_artifact",
+  );
   byId("concept-demo").textContent = fieldText(
     concept,
     "minimum_hackathon_demo",
@@ -300,7 +349,7 @@ function currentConceptDraft() {
   }
   const ref = conceptRef(concept);
   if (!state.draft.concept_reviews[ref]) {
-    state.draft.concept_reviews[ref] = {
+    const review = {
       concept_ref: ref,
       concept_sha256: conceptHash(concept),
       one_sentence_retell: "",
@@ -314,8 +363,16 @@ function currentConceptDraft() {
       recommendation: "no_opinion",
       comment: "",
     };
+    if (reviewSchemaVersion() >= 2) {
+      review.share_impulse = "maybe";
+      review.demo_confidence = "maybe";
+    }
+    state.draft.concept_reviews[ref] = review;
   }
-  return state.draft.concept_reviews[ref];
+  const draft = normalizeConceptDraft(state.draft.concept_reviews[ref]);
+  // Migrate a bound v1 browser draft in place without discarding the user's
+  // text. The round hash remains the stale-draft authority.
+  return draft;
 }
 
 function storeCurrentConceptDraft() {
@@ -325,6 +382,10 @@ function storeCurrentConceptDraft() {
   }
   draft.one_sentence_retell = byId("retell").value;
   draft.share_target = byId("share-target").value;
+  if (reviewSchemaVersion() >= 2) {
+    draft.share_impulse = byId("share-impulse").value;
+    draft.demo_confidence = byId("demo-confidence").value;
+  }
   draft.recommendation = byId("recommendation").value;
   draft.comment = byId("comment").value;
   state.draft.overall_comment = byId("overall-comment").value;
@@ -366,6 +427,9 @@ function restoreForm() {
   byId("reviewer-name").value = text(state.draft.reviewer_name, state.profile.reviewer_name);
   byId("retell").value = text(draft.one_sentence_retell);
   byId("share-target").value = text(draft.share_target);
+  byId("share-impulse").value = text(draft.share_impulse, "maybe");
+  byId("demo-confidence").value = text(draft.demo_confidence, "maybe");
+  byId("human-signals-v2").hidden = reviewSchemaVersion() < 2;
   byId("recommendation").value = text(draft.recommendation, "no_opinion");
   byId("comment").value = text(draft.comment);
   byId("overall-comment").value = text(state.draft.overall_comment);
@@ -522,16 +586,52 @@ function renderTeamWall() {
     const card = document.createElement("article");
     card.className = "wall-receipt";
     card.append(makeTextElement("p", "eyebrow", text(entry.reviewer_name, "匿名队友")));
-    card.append(makeTextElement("strong", "", text(entry.one_sentence_retell, "未填写复述")));
-    card.append(
-      makeTextElement(
-        "p",
-        "",
-        text(entry.share_target) ? `想递给：${entry.share_target}` : "没有填写分享对象",
-      ),
-    );
-    if (text(entry.comment)) {
-      card.append(makeTextElement("p", "", entry.comment));
+    asArray(entry.concept_reviews).forEach((review) => {
+      card.append(
+        makeTextElement(
+          "strong",
+          "",
+          `${text(review.concept_ref, "候选")}：${text(
+            review.one_sentence_retell,
+            "未填写复述",
+          )}`,
+        ),
+      );
+      const impulse = text(review.share_impulse);
+      const confidence = text(review.demo_confidence);
+      card.append(
+        makeTextElement(
+          "p",
+          "human-signal",
+          impulse
+            ? SHARE_IMPULSE_LABELS[impulse] || impulse
+            : "旧版回执：未记录分享冲动",
+        ),
+      );
+      card.append(
+        makeTextElement(
+          "p",
+          "",
+          text(review.share_target)
+            ? `想到的人：${review.share_target}`
+            : "没有填写分享对象",
+        ),
+      );
+      card.append(
+        makeTextElement(
+          "p",
+          "human-signal",
+          confidence
+            ? DEMO_CONFIDENCE_LABELS[confidence] || confidence
+            : "旧版回执：未记录 Demo 信心",
+        ),
+      );
+      if (text(review.comment)) {
+        card.append(makeTextElement("p", "", review.comment));
+      }
+    });
+    if (text(entry.overall_comment)) {
+      card.append(makeTextElement("p", "", `整体补充：${entry.overall_comment}`));
     }
     content.append(card);
   });
@@ -555,8 +655,10 @@ function renderReceiptState() {
       "已提交本轮回执",
     )}`;
   byId("receipt-target").textContent = text(current.share_target)
-    ? `想递给：${current.share_target}`
-    : "这次没有指定分享对象。";
+    ? `${SHARE_IMPULSE_LABELS[text(current.share_impulse)] || "分享信号"} · 想到：${
+        current.share_target
+      }`
+    : SHARE_IMPULSE_LABELS[text(current.share_impulse)] || "这次没有指定分享对象。";
   const concept = getConcepts()[state.currentConceptIndex];
   byId("receipt-binding").textContent =
     `✓ 已绑定 ${conceptRef(concept)} / ${shortHash(conceptHash(concept))}`;
@@ -572,6 +674,7 @@ function renderCurator() {
   const curation = asObject(asObject(state.snapshot).curation);
   renderCuratorCoverage(curation);
   renderCuratorMemory(curation);
+  renderCuratorFeasibility(curation);
   renderResolutionActions(curation);
   byId("curator-name").value = text(state.profile.reviewer_name);
   const round = getRound();
@@ -612,10 +715,71 @@ function renderCuratorCoverage(curation) {
           `${text(review.concept_ref)}：${text(review.one_sentence_retell)}`,
         ),
       );
-      card.append(makeTextElement("p", "", `想递给：${text(review.share_target, "未填写")}`));
+      card.append(
+        makeTextElement(
+          "p",
+          "human-signal",
+          text(review.share_impulse)
+            ? SHARE_IMPULSE_LABELS[review.share_impulse] || review.share_impulse
+            : "旧版回执：未记录分享冲动",
+        ),
+      );
+      card.append(
+        makeTextElement("p", "", `想到的人：${text(review.share_target, "未填写")}`),
+      );
+      card.append(
+        makeTextElement(
+          "p",
+          "human-signal",
+          text(review.demo_confidence)
+            ? DEMO_CONFIDENCE_LABELS[review.demo_confidence] || review.demo_confidence
+            : "旧版回执：未记录 Demo 信心",
+        ),
+      );
       card.append(makeTextElement("p", "", text(review.comment)));
     });
     receiptsTarget.append(card);
+  });
+}
+
+function renderCuratorFeasibility(curation) {
+  const target = byId("curator-feasibility");
+  target.replaceChildren();
+  const rows = asArray(curation.feasibility_evidence);
+  if (!rows.length) {
+    target.append(
+      makeTextElement(
+        "p",
+        "",
+        "本轮没有 C4F 证据（旧版 waiting run 仍可继续评审）。",
+      ),
+    );
+    return;
+  }
+  rows.forEach((row) => {
+    const card = document.createElement("article");
+    card.className = "feasibility-note";
+    card.append(makeTextElement("p", "eyebrow", text(row.concept_ref)));
+    card.append(
+      makeTextElement(
+        "strong",
+        "",
+        `机器 C4F：${text(row.overall_decision, "unknown")}`,
+      ),
+    );
+    asArray(row.dimensions).forEach((dimension) => {
+      const reason = text(dimension.reason_code);
+      card.append(
+        makeTextElement(
+          "p",
+          "",
+          `${text(dimension.dimension)} · ${text(dimension.verdict)}${
+            reason ? ` · ${reason}` : ""
+          }\n${text(dimension.evidence)}`,
+        ),
+      );
+    });
+    target.append(card);
   });
 }
 
@@ -783,22 +947,43 @@ function buildReviewPayload() {
   if (!conceptReviews.length) {
     throw new Error("至少为一个候选留下一句话复述。");
   }
+  const immediateWithoutTarget =
+    reviewSchemaVersion() >= 2 &&
+    conceptReviews.find(
+      (review) =>
+        review.share_impulse === "immediate" && !text(review.share_target).trim(),
+    );
+  if (immediateWithoutTarget) {
+    throw new Error("选择“会立刻发”时，请填写一个具体的分享对象。");
+  }
   const pairwise = Object.values(asObject(state.draft.pairwise)).filter((pair) =>
     ["left", "right", "both", "neither", "cannot_compare"].includes(pair.preference),
   );
   const round = getRound();
-  return {
+  const normalizedReviews = conceptReviews.map((review) => {
+    const result = { ...review };
+    if (reviewSchemaVersion() < 2) {
+      delete result.share_impulse;
+      delete result.demo_confidence;
+    }
+    return result;
+  });
+  const payload = {
     review_id: text(state.draft.review_id),
     run_id: text(asObject(state.snapshot).run_id),
     round_id: text(round.id, text(round.round_id)),
     round_sha256: text(round.sha256),
     reviewer_id: state.profile.reviewer_id,
     reviewer_name: state.profile.reviewer_name,
-    concept_reviews: conceptReviews,
+    concept_reviews: normalizedReviews,
     pairwise,
     overall_comment: text(state.draft.overall_comment),
     supersedes_review_id: state.submittedReviewId,
   };
+  if (reviewSchemaVersion() >= 2) {
+    payload.schema_version = 2;
+  }
+  return payload;
 }
 
 async function submitReview(event) {
@@ -995,7 +1180,16 @@ async function refreshSnapshot() {
 }
 
 function bindInputPersistence() {
-  ["reviewer-name", "retell", "share-target", "recommendation", "comment", "overall-comment"].forEach(
+  [
+    "reviewer-name",
+    "retell",
+    "share-target",
+    "share-impulse",
+    "demo-confidence",
+    "recommendation",
+    "comment",
+    "overall-comment",
+  ].forEach(
     (id) => {
       byId(id).addEventListener("input", () => {
         storeCurrentConceptDraft();

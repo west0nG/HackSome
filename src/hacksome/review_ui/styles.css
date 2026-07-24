@@ -512,7 +512,8 @@ button:disabled {
 .team-wall-content,
 #curator-receipts,
 #curator-memory,
-#curator-coverage {
+#curator-coverage,
+#curator-feasibility {
   display: grid;
   gap: 12px;
 }
@@ -520,6 +521,7 @@ button:disabled {
 .wall-receipt,
 .memory-note,
 .coverage-row,
+.feasibility-note,
 .resolution-action {
   padding: 14px;
   border: 1px solid var(--line);
@@ -531,6 +533,21 @@ button:disabled {
 .memory-note p,
 .coverage-row p {
   margin: 5px 0 0;
+  white-space: pre-wrap;
+}
+
+.human-signal {
+  color: var(--signal-periwinkle);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+
+.feasibility-note {
+  border-left: 4px solid var(--flash-coral);
+}
+
+.feasibility-note p {
+  margin: 7px 0 0;
   white-space: pre-wrap;
 }
 
@@ -597,6 +614,12 @@ button:disabled {
 
 .field {
   margin: 0 0 18px;
+}
+
+.signal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .field label,
@@ -835,6 +858,7 @@ button:disabled {
 
   .detail-grid,
   .curator-grid,
+  .signal-grid,
   .pair-cards {
     grid-template-columns: 1fr;
   }

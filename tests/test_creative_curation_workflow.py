@@ -6,7 +6,10 @@ import tempfile
 import unittest
 from typing import Any
 
-from hacksome.creative.artifacts import EVIDENCE_REVISION_HEADINGS
+from hacksome.creative.artifacts import (
+    EVIDENCE_REVISION_HEADINGS,
+    PORTFOLIO_DIMENSIONS,
+)
 from hacksome.creative.workflow import (
     CreativeConcept,
     CreativeIdeaWorkflow,
@@ -99,6 +102,22 @@ class CreativeCurationRunner(CreativeScriptedRunner):
                     {
                         "concept_ref": reference,
                         "decision": self.curator_decisions[slot - 1],
+                        "dimensions": [
+                            {
+                                "dimension": dimension,
+                                "verdict": (
+                                    "pass"
+                                    if self.curator_decisions[slot - 1]
+                                    == "include"
+                                    else "uncertain"
+                                    if self.curator_decisions[slot - 1] == "hold"
+                                    else "fail"
+                                ),
+                                "reason": "Categorical fixture evidence.",
+                                "evidence": "The exact Concept supplies this evidence.",
+                            }
+                            for dimension in PORTFOLIO_DIMENSIONS
+                        ],
                         "rationale": "Categorical evidence supports this decision.",
                         "possible_duplicate_refs": [],
                     }
@@ -272,7 +291,9 @@ class CreativeCurationWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 "no_concepts_generated",
             )
 
-    async def test_all_hook_rejects_have_distinct_empty_reason(self) -> None:
+    async def test_all_concept_screen_rejects_have_distinct_empty_reason(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runner = CreativeCurationRunner(reject_all_hooks=True)
             workflow = CreativeIdeaWorkflow.create(
@@ -293,7 +314,7 @@ class CreativeCurationWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(
                 batch.skip_reason,
-                "all_candidates_failed_hook",
+                "all_candidates_failed_concept_screen",
             )
             self.assertIsNone(workflow.hub.load_state()["wait"])
             self.assertEqual(validate_run(workflow.run_dir), [])
