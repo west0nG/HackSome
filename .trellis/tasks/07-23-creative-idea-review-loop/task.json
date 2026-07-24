@@ -12,21 +12,28 @@
   "assignee": "percy",
   "createdAt": "2026-07-23",
   "completedAt": null,
-  "branch": "codex/creative-review-loop",
+  "branch": "codex/creative-software-first",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": "c15e0ce",
-  "pr_url": "https://github.com/west0nG/HackSome/pull/1",
+  "commit": "2209c1a",
+  "pr_url": null,
   "subtasks": [],
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "真实 Hack the Rest smoke run 已通过 C0-C6 并停在 open human review；未伪造 C6 resolution 或 C7 Idea Card。",
+  "notes": "真实 Hack the Rest smoke run 是 frozen Creative contract v1，已通过 C0-C6 并停在 open human review；其五项偏装置 shortlist 只作为问题基线，不是 software-first v2 benchmark。software-first v2 业务代码、Prompt/Schema、C4F、C6 页面与离线质量门已完成；真实 v1 waiting run 的副本已完成 receipt/resolution/resume 回归，原 run 未改。尚待新的真实 v2 route smoke、正式团队评审与在线 benchmark；未伪造原 run 的 C6 resolution 或 C7 Idea Card。",
   "meta": {
     "smoke_run_id": "creative-hack-the-rest-20260724-04",
     "smoke_status": "waiting",
+    "smoke_contract_version": "1",
     "smoke_task_count": 65,
     "smoke_shortlist_count": 5,
-    "offline_test_count": 255
+    "offline_test_count": 263,
+    "offline_test_contract_version": "2",
+    "software_first_contract_target": "2",
+    "software_first_status": "implementation_validated_real_smoke_pending",
+    "legacy_v1_resume_regression": "passed_on_disposable_copy",
+    "baseline_pr_url": "https://github.com/west0nG/HackSome/pull/1",
+    "baseline_merge_commit": "2289b84"
   }
 }

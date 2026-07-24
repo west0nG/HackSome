@@ -14,6 +14,11 @@
 - Review batch：`creative-review-batch-r001`
 - 离线验证：`Run is valid.`
 
+这是 frozen Creative contract v1 的历史结果。它仍可按 v1 资源打开、评审和
+resume，但没有 C4F Software Demo Feasibility gate，也没有 v2 的
+software-first/viral benchmark。下面五项偏装置 shortlist 只用于说明 v1 的
+偏移和设计动机，不能被引用为 v2 已实现、已验证或已取得更好效果的证据。
+
 本轮按约定没有伪造 reviewer、关闭 C6 或继续到 C7。因此现在得到的是五个
 待人工评审的 Concept revision，而不是最终 Idea Card。Idea Card 只会在真实
 人审 resolution 闭合后确定性生成。
@@ -24,6 +29,7 @@
 ## 2. 运行配置
 
 - Route：`creative`
+- Creative contract：`v1`（legacy waiting compatibility）
 - Model：`gpt-5.6-terra`
 - Reasoning：`medium`
 - Idea Memory：`off`
@@ -66,7 +72,8 @@ Memory，因为只有 completed、validated 的 Creative run 才可被未来 run
 
 - 所有入选项都能在约 30 秒内形成可见或可听的因果闭环。
 - 最小 Demo 大多只需要卡片、纸张、椅子、桌面物件和现场参与者，不依赖虚假
-  AI 能力或未授权数据。
+  AI 能力或未授权数据；但按新的 v2 Policy，这恰好暴露了“核心因果由道具/
+  参与者完成，软件技术含量不足”的问题，不能再算可落地软件 Demo 的正向证据。
 - Hook 基本都能被一句话复述，且明确避开了“做一个休息 App”的惯性答案。
 - Novelty Scan 没有把“搜不到”写成绝对原创；C6A 会披露近邻、文化边界和
   刻意未采用的证据。
@@ -107,23 +114,36 @@ C5W 的 12 个 Novelty Scan 消耗 1,673,286 input tokens，占总 input 的约
 上下文；本轮 65 个任务仍全部成功。裸 `codex exec` 的终端输出很吵，不代表
 harness 的创意上下文被污染。
 
-## 7. 下一轮建议
+## 7. 由本轮基线触发的 v2 调整与待验证事项
 
-先不要根据一道题直接重写工作流。下一轮 benchmark 建议明确比较：
+Percy 已根据本批实际内容明确收紧目标，而不是把 C6 人审当成兜底：
 
-1. 当前“每个 C3 Agent 自由读取全部 Atom”的基线；
-2. Controller 给 C3 分配不同 primary Territory 或不同 Territory pair 的
-   coverage 约束。
+- 新 run 冻结 Controller-owned Software Demo Policy；
+- C2 使用 software-native lenses；
+- C3 明示 software runtime、真实端到端 Demo 与具体 share artifact；
+- C4 在联网 C5W 前新增 C4F feasibility 自动 gate，淘汰定制硬件、纯装置/
+  人工核心和 mock-only Demo；普通设备内置 I/O 仍允许；
+- C4H/C6B 强化立即分享触发，C6 人工回执增加 `share_impulse` 与
+  `demo_confidence`。
 
-评价重点不是模型自评，而是人工判断：
+这些合同已经在 software-first Creative contract v2 中完成业务接线，并通过
+离线门禁：ruff、mypy、compileall、Node UI syntax、diff-check，以及 `263`
+tests passed、`8` 个 loopback socket tests 在受限沙箱中 skipped、`0` failed。
+真实 v1 waiting run 的 disposable copy 还完成了 v1 receipt → resolution →
+单次 C6C revise → resume → completed → offline validation 回归，证明新代码不会
+用 v2 资源重解释冻结的 v1 run；原始 `-04` run 未改。
 
-- shortlist 的体验机制是否真正不同；
-- 30 秒内是否想笑、惊讶或追问；
-- 能否一句话复述；
-- 是否立刻想到一个想转发的人；
-- 是否值得为它拍一段现场视频。
+目前仍未执行新的真实 v2 route run，因此不报告 v2 shortlist、
+false-pass/false-reject、成本节省或效果提升。下面仍是下一次真实验证清单。
 
-成本侧可以另做一个严格对照：在不牺牲近邻证据的前提下，先对 Hook-pass
-Concept 做 deterministic/semantic cluster，再决定 C5W 是扫描所有候选还是只
-扫描机制代表项。该改变会影响证据完整性，必须通过 benchmark 决定，不能仅因
-本轮 token 高就直接修改合同。
+下一次 v2 验证至少要同时检查：
+
+1. 软件/WebSocket 与普通 camera/mic 正例不会被误杀；
+2. 定制硬件、纯装置、预录/mock、不可得权限反例在 C4F 终态淘汰；
+3. shortlist 确实有可运行技术核心、30 秒 surprise 和具体立即分享产物；
+4. C5W task 数只等于完整 C4 screen pass 数，并记录 token/wall-time 变化；
+5. 人工 `share_impulse`、复述与 `demo_confidence` 只作为代理信号，不冒充真实
+   传播率或 build success。
+
+原先建议的 C3 Territory coverage 对照仍可作为后续独立 benchmark；它不能
+替代本轮已经确认的 software-first 硬门槛。
