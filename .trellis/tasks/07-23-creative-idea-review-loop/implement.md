@@ -70,6 +70,15 @@
   `textContent`、移动断点和 reduced-motion 回归已通过。Desktop 首屏视觉已
   手工确认；当前浏览器安全策略/无可用 backend 阻止了点击、刷新恢复与 390px
   真实交互 QA，不能冒充已完成。
+- 第三次同题真实 smoke 使用 C3 v5、C4F/C6A v4 与双 Red Team v4，以
+  `59/59` tasks succeeded、offline validation 通过而完成：7 个 base Concept
+  中 4 个通过完整 C4，4 个完成 C5W/C6A；Meaning/Value Red Team 为
+  `2 hold + 2 exclude`，Hackathon Floor Red Team 为 `4 hold`，最终
+  shortlist 为 0，因此发布空 C6 batch、跳过人工等待并生成合法零 Idea 报告。
+  四个候选的可理解性/Demo 大体通过，但集中为“放手/停顿→抽象地图”和
+  “清除文字→节奏收据”两组近重复，所有候选的 novelty 均为
+  `uncertain|fail`。这证明新 Red Team 能阻止同质装置型概念进入人工池，也
+  暴露下一迭代应收紧 C2/C3 产品语法多样性；不能通过放松 C6 把重复项捞回。
 - 待完成：正式 C6 团队评审、closed/stale/error 等完整浏览器状态、真实 LAN
   多设备 QA 与在线双臂 benchmark；不能用 mock、离线 evaluator 或 plan-only
   CLI 结果替代。
