@@ -47,18 +47,27 @@
   route validation 均按版本闭合。硬件核心、纯装置/人工核心与不可运行 Demo
   会在联网查重和人审前淘汰。
 - 当前离线门禁：ruff、mypy、compileall、Node UI syntax 与 diff-check 全部
-  通过；`263` tests passed、`8` socket tests skipped、`0` failed。另在真实
+  通过；`270` tests passed、`0` skipped、`0` failed，包含实际 loopback HTTP
+  和 lock lifecycle 覆盖。另在真实
   v1 waiting run 的 disposable copy 上提交 v1 receipt、关闭 resolution、
   执行一次 C6C revise 并 resume 到 completed，最终离线 validation 通过；
   原始 v1 run 未改。
-- 新的真实 v2 smoke 已给出一条阶段性结论：C2/C3 已稳定转向 browser/software
+- 新的真实 v2 smoke 已以 `78/78` tasks succeeded 到达 C6 waiting：
+  `12` 个 Concept 经 C6A/C6B 形成 `8` 项 shortlist，run validation 与冻结
+  v2 资源兼容加载通过。该 run 使用收紧前的 Prompt template v2，只作为
+  prompt v3 的对照基线，不能重解释成 v3 结果。
+- 这条 v2 smoke 已给出一条阶段性结论：C2/C3 已稳定转向 browser/software
   Concept，定制硬件和纯装置方向没有回流；但首批 12 个 Concept 的 C4F 均为
   `pass`，其中仍有多子系统、浏览器 API/权限假设、预置状态和手工录屏分享摩擦
   没有被保守审查。说明 v2 已解决“媒介合规”，尚未证明 C4F 能区分“两人一天
   能否稳定跑出 Demo”。最终 run 数字和候选结果只写入独立 smoke report，本节
   不把阶段性观察冒充完整 benchmark。
-- 待完成：新的真实 v2 route smoke、正式 C6 团队评审、完整浏览器/LAN QA 与
-  在线双臂 benchmark；不能用 mock、离线 evaluator 或 plan-only CLI 结果替代。
+- C6 reviewer UI 已改成逐项目档案：每个 Concept 的三块核心事实与它自己的
+  回执位于同一张卡；Desktop、390px Mobile、每卡草稿隔离/刷新恢复和无前端
+  error 的手工浏览器 smoke 已通过。
+- 待完成：正式 C6 团队评审、closed/stale/error 等完整浏览器状态、真实 LAN
+  多设备 QA 与在线双臂 benchmark；不能用 mock、离线 evaluator 或 plan-only
+  CLI 结果替代。
 - 工作区存在与本任务无关的 Trellis 升级/onboarding 改动；提交必须使用精确
   文件列表，不能把这些文件一起 stage。
 
@@ -98,10 +107,12 @@ Idea Memory、finalization 和 C6 唯一人工关卡合同继续有效。
 - [ ] 补齐 camera/mic、mock/预录、不可得权限与弱 viral 的独立 fixture；当前
   已覆盖 software/WebSocket 正例、custom hardware、pure installation、
   C4F reason mapping、共享 repair budget 与 C5W 准入。
-- [ ] 完整运行 ruff、mypy、compileall、unit tests、Useful regression、wheel/UI
-  checks，并用新真实 challenge 至少跑到 C6 或合法空 batch；当前离线门禁已
-  通过，wheel 已构建并确认包含 v2 Prompt/Schema/UI；完整浏览器 QA 与新 v2
-  real run 尚待完成，旧 v1 smoke 不计。
+- [x] 完整运行 ruff、mypy、compileall、unit tests、Useful regression、wheel/UI
+  checks，并用新真实 challenge 跑到 C6；wheel 已确认包含 v2
+  Prompt/Schema/UI，真实 v2 run 为 `78/78` tasks succeeded、`12` 个生成项、
+  `8` 项 shortlist。旧 v1 smoke 不计。
+- [ ] 完成 closed/stale/error 状态、真实 LAN 多设备及正式团队评审浏览器 QA；
+  当前已覆盖 Desktop、390px Mobile、每卡草稿隔离/刷新恢复和 console error。
 
 ### 0.3 真实 v2 smoke 后的 Prompt-only 收紧（2026-07-24）
 
@@ -432,10 +443,15 @@ v2 run 继续使用持久化字节。实现必须保持以下映射：
 
 ### 4.4 HTML/CSS/JS
 
-- [ ] 新建 `src/hacksome/review_ui/index.html`、`styles.css`、`app.js`。
-- [ ] 实现三栏 Desktop 和单列 Mobile。
-- [ ] 实现 Concept detail、软件核心/Demo/share artifact、反应 chips、自由评论、
+- [x] 新建 `src/hacksome/review_ui/index.html`、`styles.css`、`app.js`。
+- [x] 将每个 exact Concept 渲染为独立纵向项目档案卡；卡内按标题/Hook →
+  “体验与 Hook / 软件与 Demo / 分享对象与产物”三块事实 → 折叠原始材料 →
+  本项目回执排列。Desktop 的事实区为三栏，Mobile 为单列；评审问题不得脱离
+  项目卡形成共享区域。
+- [x] 实现 Concept detail、软件核心/Demo/share artifact、反应 chips、自由评论、
   一句话复述、`share_impulse`、分享对象和 `demo_confidence`。
+- [x] 每张卡允许独立跳过；草稿与完成状态按 Concept 隔离，批量提交继续绑定
+  exact revision/hash，评审者姓名与整批总评保持 batch-level。
 - [ ] 实现可跳过的 pairwise compare。
 - [ ] 提交前隐藏 peer feedback。
 - [ ] 实现 Percy 策展台：

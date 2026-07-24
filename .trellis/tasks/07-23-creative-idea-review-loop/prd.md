@@ -283,6 +283,8 @@ UsefulRunContract        CreativeRunContract
 **人工策展：**
 
 - 针对候选名单中的精确修订版本，提供完善的 HTML/CSS/JavaScript 评审页面。
+- 每个 Concept 必须显示为一张独立项目档案卡：卡内先展示标题与 Hook，再展示“体验与 Hook”“软件 / Demo”“分享对象 / 产物”三块核心信息，随后紧接只属于该 Concept 的评审回执。不得把多个 Concept 的说明与一套脱离项目上下文的全局问题区分开放置。
+- 评审者可以整张跳过任意项目；一张卡上的草稿、反应和自由评论必须按精确 Concept revision/hash 隔离，不能串到其他卡。评审者姓名和整批总评可以保持批次级。
 - 允许多名具名队友独立评审。
 - 收集准确的一句话复述、具体分享对象、`share_impulse=immediate|maybe|no`、`demo_confidence=yes|maybe|no`、轻量反应、自由文本评论，以及可选的保留/修订/拒绝或品味否决理由；`share_impulse=immediate` 时分享对象必填。
 - 支持选定的两两比较，但不要求完成所有可能的配对。

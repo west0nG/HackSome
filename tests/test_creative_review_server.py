@@ -324,8 +324,31 @@ class TestReviewUIResources(unittest.TestCase):
         self.assertIn("localStorage", javascript)
         self.assertIn("share_impulse", javascript)
         self.assertIn("demo_confidence", javascript)
-        self.assertIn("软件核心与运行入口", html)
-        self.assertIn("分享触发与可转发物", html)
+        self.assertIn("软件核心与运行入口", javascript)
+        self.assertIn("分享触发与可转发物", javascript)
+
+    def test_ui_renders_one_vertical_review_dossier_per_concept(self) -> None:
+        root = resources.files("hacksome").joinpath("review_ui")
+        html = root.joinpath("index.html").read_text(encoding="utf-8")
+        css = root.joinpath("styles.css").read_text(encoding="utf-8")
+        javascript = root.joinpath("app.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="concept-review-cards"', html)
+        self.assertIn('class="concept-review-stack"', html)
+        self.assertNotIn('id="review-panel"', html)
+        self.assertNotIn('id="retell"', html)
+        self.assertIn("function createConceptReviewCard(", javascript)
+        self.assertIn("createConceptReviewSection(concept, index)", javascript)
+        self.assertIn('"体验与 Hook"', javascript)
+        self.assertIn('"软件 / Demo"', javascript)
+        self.assertIn('"分享对象 / 产物"', javascript)
+        self.assertIn('"one_sentence_retell"', javascript)
+        self.assertIn('"share_impulse"', javascript)
+        self.assertIn('"demo_confidence"', javascript)
+        self.assertNotIn("storeCurrentConceptDraft", javascript)
+        self.assertIn(".project-review-card", css)
+        self.assertIn(".project-facts", css)
+        self.assertIn(".project-review-section", css)
 
     def test_non_loopback_binding_requires_a_public_host(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
