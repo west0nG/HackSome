@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-from hacksome.creative.artifacts import CONCEPT_HEADINGS
+from hacksome.creative.artifacts import (
+    CONCEPT_HEADINGS,
+    SOFTWARE_DEMO_DIMENSIONS,
+    SOFTWARE_DEMO_REASON_BY_DIMENSION,
+)
 from hacksome.creative.contracts import (
     C3_CONCEPT_SYNTHESIZE,
     C4_CHEAP_HOOK_REPAIR,
@@ -45,13 +50,13 @@ class CreativePromptCatalogTests(unittest.TestCase):
             C3_CONCEPT_SYNTHESIZE,
         }
         version_four_stages = {
+            C4_SOFTWARE_DEMO_REVIEW,
             C6A_EVIDENCE_REVISE,
             C6B_PORTFOLIO_CURATE,
         }
         version_three_stages = {
             C4_CHEAP_HOOK_REPAIR,
             C4_CHEAP_HOOK_REVIEW,
-            C4_SOFTWARE_DEMO_REVIEW,
         }
         for stage in CREATIVE_STAGES:
             with self.subTest(stage=stage):
@@ -151,6 +156,7 @@ class CreativePromptCatalogTests(unittest.TestCase):
     def test_grounding_templates_accept_frozen_v3_resources(self) -> None:
         version_four_stages = {
             C3_CONCEPT_SYNTHESIZE,
+            C4_SOFTWARE_DEMO_REVIEW,
             C6A_EVIDENCE_REVISE,
             C6B_PORTFOLIO_CURATE,
         }
@@ -257,6 +263,41 @@ class CreativePromptCatalogTests(unittest.TestCase):
         self.assertIn("change or output primary Territory", rendered)
         self.assertIn("immediate_share_trigger", rendered)
         self.assertIn("The decision is mechanical", rendered)
+
+    def test_c4f_prompt_binds_every_dimension_to_its_stable_reason(self) -> None:
+        template = creative_prompt_catalog[
+            C4_SOFTWARE_DEMO_REVIEW
+        ].template_path.read_text(encoding="utf-8")
+        dimension_block = template.split(
+            "these seven entries in this exact order:",
+            1,
+        )[1].split("Each entry has exactly", 1)[0]
+        listed_dimensions = tuple(
+            re.findall(r"^[0-9]+\. `([^`]+)`$", dimension_block, re.MULTILINE)
+        )
+        self.assertEqual(listed_dimensions, SOFTWARE_DEMO_DIMENSIONS)
+
+        mapping_block = template.split(
+            "every non-pass uses the one stable code paired with its exact dimension:",
+            1,
+        )[1].split("Reason codes are stable routing labels", 1)[0]
+        listed_pairs = tuple(
+            re.findall(
+                r"^- `([^`]+)` -> `([^`]+)`$",
+                mapping_block,
+                re.MULTILINE,
+            )
+        )
+        expected_pairs = tuple(SOFTWARE_DEMO_REASON_BY_DIMENSION.items())
+        self.assertEqual(
+            tuple(dimension for dimension, _ in expected_pairs),
+            SOFTWARE_DEMO_DIMENSIONS,
+        )
+        self.assertEqual(listed_pairs, expected_pairs)
+        self.assertIn(
+            "Reason codes are stable routing labels, not a free-form diagnosis",
+            template,
+        )
 
     def test_grounding_prompts_make_concepts_legible_without_copying_examples(
         self,

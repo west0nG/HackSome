@@ -23,15 +23,20 @@ these seven entries in this exact order:
 
 Each entry has exactly `dimension`, `verdict`, `reason_code`, and `evidence`.
 `verdict` is `pass`, `uncertain`, or `fail`. A pass uses null `reason_code`;
-every non-pass uses the matching stable code:
+every non-pass uses the one stable code paired with its exact dimension:
 
-- `core_not_software_first`
-- `requires_custom_hardware_or_fabrication`
-- `core_is_manual_performance_or_installation`
-- `no_runnable_end_to_end_demo_path`
-- `requires_unavailable_dependency_or_permission`
-- `not_buildable_within_hackathon_budget`
-- `demo_does_not_prove_core_mechanism`
+- `software_first_core` -> `core_not_software_first`
+- `hardware_independence` -> `requires_custom_hardware_or_fabrication`
+- `technical_demo_substance` -> `core_is_manual_performance_or_installation`
+- `end_to_end_demo_path` -> `no_runnable_end_to_end_demo_path`
+- `dependency_integrity` -> `requires_unavailable_dependency_or_permission`
+- `hackathon_scope` -> `not_buildable_within_hackathon_budget`
+- `core_proof` -> `demo_does_not_prove_core_mechanism`
+
+Reason codes are stable routing labels, not a free-form diagnosis. Even when
+another label sounds closer to the evidence, use only the code paired with the
+dimension being marked `uncertain` or `fail`. Put the nuanced diagnosis in
+`evidence`.
 
 Ordinary laptops, phones, browsers, and their built-in camera, microphone,
 touch, screen, speakers, or accelerometer are allowed. A projector or display

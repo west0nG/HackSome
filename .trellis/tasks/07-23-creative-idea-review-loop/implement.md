@@ -184,6 +184,15 @@ allowlist；已创建 run 继续使用自身冻结的 v2/v3 bytes。
 v4，加入 650–900 词目标与返回前机械 H2/ref 自检，不放宽 validator、不由
 Controller 补写模型正文。
 
+第二次真实 smoke 的 C3 v5 四个 Session 全部通过并发布 9 个 Concept，但一份
+C4F 回执把 `technical_demo_substance` 的非 pass reason 写成
+`no_runnable_end_to_end_demo_path`；代码合同要求
+`core_is_manual_performance_or_installation`，因此再次正确 fail-closed。
+Break-loop 分类为跨层合同 + 变更传播 + 测试缺口：Spec/validator 有固定映射，
+Prompt 只有两个未显式绑定的有序列表，fixture 又直接读取代码常量而掩盖真实模型
+行为。C4F 单独前进到 v4 并兼容 frozen v3；Prompt 逐对绑定七个映射，测试从
+`SOFTWARE_DEMO_REASON_BY_DIMENSION` 逐项检查，不放宽 validator。
+
 Prompt / Controller：
 
 - [x] 收紧 `creative-concept-synthesize.md`：在既有 sections 中强制三句
@@ -203,6 +212,9 @@ Prompt / Controller：
   不变、v3 可兼容加载、Schema/reason enum 字节不变。
 - [x] 首次真实 smoke 暴露 C3 末尾 H2 遗漏后，将 C3 提升至 v5；限制单篇篇幅、
   强制逐项检查十二个 H2/`Parent Atoms`/refs，并覆盖 frozen v4 兼容加载。
+- [x] 第二次真实 smoke 暴露 C4F dimension/reason 跨层歧义后，将 C4F 提升至
+  v4；Prompt 显式逐对绑定七个固定映射，测试从 validator 同源常量逐项核对，
+  并覆盖 frozen v3 兼容加载。
 
 Reviewer UI：
 
