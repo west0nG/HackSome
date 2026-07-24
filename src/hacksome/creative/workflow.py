@@ -109,6 +109,27 @@ SYNTHESIS_LENSES = (
     "Combine atoms through software-visible hidden state or a surprising technical mechanism",
 )
 
+_PORTFOLIO_CURATOR_LENSES = (
+    (
+        "meaning_value_red_team",
+        (
+            "After removing poetic copy and visual atmosphere, verify that an "
+            "ordinary person can explain the product loop, affect a meaningful "
+            "output, repeat it, and understand its value to a recipient. Reject "
+            "curator-dependent installation metaphors and empty AI spectacles."
+        ),
+    ),
+    (
+        "hackathon_floor_red_team",
+        (
+            "Evaluate the exact Concept as a real hackathon-floor demo: a visitor "
+            "must be able to start within about 30 seconds, receive software-made "
+            "feedback, want a second round, and invite another person to try it "
+            "without relying on an author performance or long explanation."
+        ),
+    ),
+)
+
 _HARD_SOFTWARE_DEMO_REASON_CODES = frozenset(
     {
         StableReasonCode.CORE_NOT_SOFTWARE_FIRST.value,
@@ -1166,25 +1187,55 @@ class CreativeIdeaWorkflow:
         allowed_refs = {concept.artifact_ref for concept in concepts}
         portfolio = _curation_portfolio_text(self.hub, concepts)
         software_policy = _input_text(self.hub, "software_demo_policy")
+        curator_lenses_enabled = (
+            self.prompt_catalog[C6B_PORTFOLIO_CURATE].version == "4"
+        )
+        if int(self.settings.portfolio_curators) != len(
+            _PORTFOLIO_CURATOR_LENSES
+        ):
+            raise CreativeWorkflowError(
+                "portfolio_curators must match the fixed curator lens count"
+            )
 
-        async def curate(slot: int) -> tuple[int, dict[str, Any], str, str]:
+        async def curate(
+            slot: int,
+            lens_id: str,
+            lens_instruction: str,
+        ) -> tuple[int, dict[str, Any], str, str]:
             task_id = f"creative-c6b-portfolio-curator-{slot:02d}"
+            blocks: list[tuple[str, str]] = [
+                ("EVIDENCE_INFORMED_PORTFOLIO", portfolio),
+                ("SOFTWARE_DEMO_POLICY", software_policy),
+            ]
+            if curator_lenses_enabled:
+                blocks.append(
+                    (
+                        "CURATOR_LENS",
+                        _json_text(
+                            {
+                                "curator_lens_id": lens_id,
+                                "primary_counterevidence_question": (
+                                    lens_instruction
+                                ),
+                            }
+                        ),
+                    )
+                )
+            blocks.append(
+                (
+                    "CURATION_CONTRACT",
+                    (
+                        "Classify every exact Concept ref once as "
+                        "include, hold, or exclude. Do not score, rank, "
+                        "merge, or emit primary Territory. The categorical "
+                        "dimensions mechanically determine the decision."
+                    ),
+                )
+            )
             output = await self._execute(
                 stage=C6B_PORTFOLIO_CURATE,
                 task_id=task_id,
-                blocks=(
-                    ("EVIDENCE_INFORMED_PORTFOLIO", portfolio),
-                    ("SOFTWARE_DEMO_POLICY", software_policy),
-                    (
-                        "CURATION_CONTRACT",
-                        (
-                            "Classify every exact Concept ref once as "
-                            "include, hold, or exclude. Do not score, rank, "
-                            "merge, or emit primary Territory. The categorical "
-                            "dimensions mechanically determine the decision."
-                        ),
-                    ),
-                ),
+                blocks=tuple(blocks),
                 parent_refs=(
                     "input:software_demo_policy",
                     *(concept.artifact_ref for concept in concepts),
@@ -1199,6 +1250,12 @@ class CreativeIdeaWorkflow:
             artifact_ref = (
                 f"creative-portfolio-curation-r001-v{slot:02d}"
             )
+            metadata: dict[str, Any] = {
+                "curator_slot": slot,
+                "concept_refs": sorted(allowed_refs),
+            }
+            if curator_lenses_enabled:
+                metadata["curator_lens_id"] = lens_id
             self.hub.publish_artifact(
                 artifact_id=artifact_ref,
                 artifact_type="creative_portfolio_curation",
@@ -1211,10 +1268,7 @@ class CreativeIdeaWorkflow:
                 source_refs=tuple(
                     concept.artifact_ref for concept in concepts
                 ),
-                metadata={
-                    "curator_slot": slot,
-                    "concept_refs": sorted(allowed_refs),
-                },
+                metadata=metadata,
             )
             return slot, output, task_id, artifact_ref
 
@@ -1222,10 +1276,13 @@ class CreativeIdeaWorkflow:
             sorted(
                 await asyncio.gather(
                     *(
-                        curate(slot)
-                        for slot in range(
-                            1,
-                            int(self.settings.portfolio_curators) + 1,
+                        curate(slot, lens_id, lens_instruction)
+                        for slot, (
+                            lens_id,
+                            lens_instruction,
+                        ) in enumerate(
+                            _PORTFOLIO_CURATOR_LENSES,
+                            start=1,
                         )
                     )
                 )

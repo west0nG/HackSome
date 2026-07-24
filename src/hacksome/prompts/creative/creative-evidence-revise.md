@@ -30,6 +30,33 @@ artifact. Novelty polish must not reintroduce a removed backend, second-device
 assumption, manual recording workflow, hidden operator, or unsupported
 permission/compatibility claim.
 
+Use the verified Novelty Scan to lower the explanation burden, not to make the
+revision more abstract, poetic, or strange. In the mutable standard sections,
+make all of the following understandable in plain language:
+
+- the familiar entry or interaction grammar the Concept borrows;
+- what the user actually does to begin one round;
+- what observable response the software itself produces;
+- what changes on a second input, mode, person, or round;
+- why that repeated result has value or is worth sharing; and
+- how the core mechanism materially differs from the closest verified
+  precedent.
+
+Only name a precedent, product, project, or URL when the supplied Novelty Scan
+actually supports it. Never upgrade a vague resemblance into a factual claim
+or fabricate a reference. If no named precedent is verified, describe a
+generic recognizable product family without pretending it is C5W evidence and
+record that limitation in `Evidence Deliberately Not Adopted`.
+
+Ensure the revision contains the three explicit plain-language product-loop
+statements (`User does:`, `Software immediately responds:`, and `Why try or
+share again:`) plus `Recognizable product grammar:` in their corresponding
+mutable sections. Preserve and strengthen them when the source already has
+them; add them when an older or memory-remix source does not. Reject
+evidence-driven wording that turns a concrete interaction into an installation
+metaphor, ambient aesthetic artifact, unexplained AI effect, or experience that
+needs curatorial context.
+
 Retain every standard Concept H2 and add exactly one non-empty H2 for:
 
 - `Evidence-informed Changes`

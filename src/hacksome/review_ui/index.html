@@ -9,7 +9,7 @@
     <script src="/assets/app.js" defer></script>
   </head>
   <body>
-    <a class="skip-link" href="#concept-review-cards">跳到候选档案</a>
+    <a class="skip-link" href="#active-concept-stage">跳到正在评审的项目</a>
     <div class="app-frame">
       <header class="topbar">
         <div class="brand-lockup" aria-label="HackSome Relay Room">
@@ -28,21 +28,30 @@
       <main id="review-desk" class="review-desk">
         <section class="desk-intro" aria-labelledby="desk-title">
           <div>
-            <p class="eyebrow">C6 / 候选档案</p>
-            <h2 id="desk-title">逐个项目看，逐个项目评</h2>
+            <p class="eyebrow">C6 / Relay Deck</p>
+            <h2 id="desk-title">一次只接一张卡</h2>
             <p class="desk-deck">
-              每张档案都把 Concept 原文和它自己的评审回执放在一起。可跳过不想评的项目；
-              已填写的回执会一次提交并绑定各自的 revision 与 hash。
+              看懂这一个项目，留下复述与建议，再决定保留、修改或淘汰。卡片传走后仍可返回；
+              最后再把整批回执一次提交。
             </p>
           </div>
-          <div class="desk-progress" aria-label="本轮项目进度">
-            <p class="eyebrow">本轮项目</p>
+          <div class="desk-progress" aria-label="本轮已填写项目进度">
+            <p class="eyebrow">已留下复述</p>
             <p id="relay-position" class="relay-position">— / —</p>
             <div id="coverage-summary" class="coverage-summary" aria-live="polite"></div>
           </div>
         </section>
 
-        <nav id="concept-index" class="concept-index" aria-label="跳到候选项目">
+        <nav id="concept-index" class="concept-index" aria-label="候选项目目录" hidden>
+          <header class="concept-index-heading">
+            <div>
+              <p class="eyebrow">本轮目录</p>
+              <h2>跳到任意一张项目卡</h2>
+            </div>
+            <button id="close-concept-directory" class="text-button" type="button">
+              关闭目录
+            </button>
+          </header>
           <ol id="concept-list" class="concept-list"></ol>
         </nav>
 
@@ -55,8 +64,8 @@
           <section id="reviewer-intake" class="reviewer-intake" aria-labelledby="reviewer-title">
             <div>
               <p class="eyebrow">评审者</p>
-              <h2 id="reviewer-title">先留下你的名字</h2>
-              <p>项目问题都在各自档案里；这里仅记录这批回执是谁留下的。</p>
+              <h2 id="reviewer-title">谁在接这一棒？</h2>
+              <p>草稿会留在这台浏览器里，并分别绑定每张卡的 exact revision 与 hash。</p>
             </div>
             <div class="field compact-field">
               <label for="reviewer-name">你的名字</label>
@@ -70,12 +79,38 @@
             </div>
           </section>
 
-          <section
-            id="concept-review-cards"
-            class="concept-review-stack"
-            aria-label="候选项目与各自评审表单"
-            tabindex="-1"
-          ></section>
+          <section id="relay-controller" class="relay-controller" aria-label="项目卡导航">
+            <div class="active-card-meta">
+              <p class="eyebrow">正在评审</p>
+              <p id="active-concept-position" class="active-concept-position">— / —</p>
+              <p id="active-concept-status" class="active-concept-status">等待项目</p>
+            </div>
+            <div class="relay-navigation">
+              <button id="previous-concept" class="quiet-button" type="button">
+                ← 上一张
+              </button>
+              <button
+                id="toggle-concept-directory"
+                class="secondary-button"
+                type="button"
+                aria-controls="concept-index"
+                aria-expanded="false"
+              >
+                目录
+              </button>
+            </div>
+          </section>
+
+          <div id="active-concept-stage" class="concept-deck-shell" tabindex="-1">
+            <span class="deck-shadow deck-shadow-back" aria-hidden="true"></span>
+            <span class="deck-shadow deck-shadow-middle" aria-hidden="true"></span>
+            <section
+              id="concept-review-cards"
+              class="concept-review-deck"
+              aria-label="正在评审的候选项目与本项目回执"
+            ></section>
+          </div>
+          <p id="relay-announcer" class="visually-hidden" aria-live="polite"></p>
 
           <section id="review-submit-bar" class="review-submit-bar">
             <div class="field">

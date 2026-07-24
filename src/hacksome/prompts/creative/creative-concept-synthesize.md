@@ -39,6 +39,51 @@ media-export risks unless every required integration is justified.
 what exact URL/result/recording/challenge/remix they send, and one concrete kind
 of person they would send it to. “It is viral” is not evidence.
 
+Make the product loop understandable before making it mysterious. Across the
+existing sections, include these three explicit, plain-language statements:
+
+- In `Audience Action`, `User does:` says what real input or action starts one
+  round.
+- In `Software Core and Runtime`, `Software immediately responds:` says what
+  observable change the software itself computes and returns.
+- In `Why It Is Unexpected Yet Legible`, `Why try or share again:` says what
+  changes on another input, mode, person, or round and why the result is worth
+  sending to someone.
+
+Each statement must stand on its own without poetic language, world-building,
+AI mystique, or unexplained technical terms. A visual atmosphere, symbolic
+object, ambient output, or one-off AI spectacle is not a product loop. Return
+zero Concepts when the only way to make an idea interesting is a curator's
+explanation rather than a user's action changing a meaningful result.
+
+Also include `Recognizable product grammar:` inside `Why It Is Unexpected Yet
+Legible`. Name the nearest interaction family an ordinary person already
+understands—such as a relationship-path explorer, realtime music partner,
+shareable generator toy, multiplayer challenge, or creation tool. State
+separately:
+
+- the familiar entry/action grammar retained; and
+- the one core mechanism materially changed.
+
+Do not invent a product name, URL, adoption claim, or prior-art fact. A familiar
+grammar makes the first interaction legible; it does not excuse cloning an
+existing idea or adding an AI label to it.
+
+Use these two examples only to calibrate the quality shape, never as source
+material:
+
+- A “six degrees between any two people or characters” explorer has an obvious
+  two-name input, an immediate path output, repeatable queries, a shareable
+  result, and secondary discoveries such as common bridge figures.
+- A realtime Jam partner hears a person's actual playing and audibly supplies
+  a missing band role; Blues, Jazz, or everyone-solos modes create meaningful
+  repeat interactions and a clear live technical proof.
+
+Extract only their shared qualities: familiar entry, real input, immediate
+software response, repeatable play, visible technical proof, and a natural
+share artifact. Do not propose a six-degrees/relationship-path concept or an AI
+musician/Jam-partner concept, and do not merely rename either example.
+
 `Minimum Hackathon Demo` must include these four clearly labeled items inside
 that H2:
 

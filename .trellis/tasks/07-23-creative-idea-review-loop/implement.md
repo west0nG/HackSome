@@ -62,9 +62,14 @@
   没有被保守审查。说明 v2 已解决“媒介合规”，尚未证明 C4F 能区分“两人一天
   能否稳定跑出 Demo”。最终 run 数字和候选结果只写入独立 smoke report，本节
   不把阶段性观察冒充完整 benchmark。
-- C6 reviewer UI 已改成逐项目档案：每个 Concept 的三块核心事实与它自己的
-  回执位于同一张卡；Desktop、390px Mobile、每卡草稿隔离/刷新恢复和无前端
-  error 的手工浏览器 smoke 已通过。
+- C3/C6A/C6B Prompt template v4 与两个固定 C6B Red Team 已接线；只有 v4
+  注入/记录 lens，frozen v2/v3 run 保持历史 blocks/metadata shape。独立检查
+  已补专门兼容回归。
+- C6 reviewer UI 已改成单 active Concept 接力卡：三块核心事实与该项目回执
+  位于同一张卡，✓/△/✕ 后轻量离场并进入下一项；静态资源、状态合同、
+  `textContent`、移动断点和 reduced-motion 回归已通过。Desktop 首屏视觉已
+  手工确认；当前浏览器安全策略/无可用 backend 阻止了点击、刷新恢复与 390px
+  真实交互 QA，不能冒充已完成。
 - 待完成：正式 C6 团队评审、closed/stale/error 等完整浏览器状态、真实 LAN
   多设备 QA 与在线双臂 benchmark；不能用 mock、离线 evaluator 或 plan-only
   CLI 结果替代。
@@ -166,6 +171,49 @@ v2 run 继续使用持久化字节。实现必须保持以下映射：
 - [ ] 完整重跑 Creative/Useful tests、ruff、mypy、compileall、wheel resource
   inspection；再用相同 challenge 新建 run 对照 C4F/C6B 分布，不能重解释或覆盖
   已冻结 smoke run。
+
+### 0.4 可理解性 Red Team + 单卡接力 UI（2026-07-24）
+
+本轮继续保持 Creative contract/prompt policy/stage policy/report policy v2，
+不新增 stage、artifact H2、JSON Schema 字段、verdict、reason code 或 review
+payload。C3/C6A/C6B Prompt template 前进到 v4，并把 v3 加入显式历史
+allowlist；已创建 run 继续使用自身冻结的 v2/v3 bytes。
+
+Prompt / Controller：
+
+- [x] 收紧 `creative-concept-synthesize.md`：在既有 sections 中强制三句
+  plain-language product loop 与 recognizable product grammar，排除需要策展
+  说明才成立的抽象装置；加入“任意人物六度路径”和“实时 Jam 搭档”作为质量形状
+  校准，并明确禁止复制表面题材。
+- [x] 收紧 `creative-evidence-revise.md`：使用 C5W 已验证先例解释熟悉入口、
+  实质变化、重复玩法和可见价值；不得编造先例或把修订变得更诗性。
+- [x] 将两个 C6B slot 固定为 `meaning_value_red_team` 与
+  `hackathon_floor_red_team`；Controller 向每个 fresh Session 注入不同
+  `CURATOR_LENS`，artifact metadata 记录 lens ID。两者仍完整输出相同五维
+  categorical Schema，Controller shortlist 算法不变。
+- [x] 收紧 `creative-portfolio-curate.md`：前者拒绝空洞隐喻、无意义产物、
+  一次性 AI 奇观和解释门槛；后者拒绝只能观看作者表演、没有 30 秒亲手反馈、
+  没有第二次玩法或真实使用欲望的“展厅概念”。
+- [x] 增加 Prompt/Workflow 回归：两个 lens 均存在且互不相同、五维/决策关系
+  不变、v3 可兼容加载、Schema/reason enum 字节不变。
+
+Reviewer UI：
+
+- [x] 普通 reviewer 改为单 active Concept 卡组；任何时刻只展开一个项目，
+  同一 `article` 内依次展示标题/Hook、三块精简事实、折叠原始材料和本项目回执。
+- [x] 增加卡组目录、上一张和“稍后再看”；草稿继续按 exact Concept ref/hash
+  隔离，并记住最近 active ref，刷新后回到原位置或第一张未判断项。
+- [x] 增加 `✕ 不成立 / △ 需要修改 / ✓ 保留` 快速动作，分别映射现有
+  `recommendation=reject|revise|keep`；至少填写一句话复述后才完成判断，随后
+  卡片上滑/淡出并进入下一张，提交前仍可回看修改。
+- [x] 视觉签名采用有层次的 relay card deck、方向色和轻微离场动效；支持
+  `prefers-reduced-motion`、键盘、焦点交接、390px 移动端且无横向滚动。
+- [x] 保持 review API/payload、pre-submit 隔离、curator projection、Team Wall
+  与 batch submit 语义不变；所有 run/user 文本继续只用 `textContent`。
+- [ ] 更新 UI 资源回归并完成 Node syntax、桌面/移动浏览器 smoke、刷新恢复、
+  前进/返回/稍后、✓/△/✕、reduced-motion 和 console error 检查。自动化资源
+  回归、Node syntax、静态移动/reduced-motion 检查及 Desktop 首屏视觉已完成；
+  当前浏览器环境阻止真实点击与 390px 交互，保持未勾选。
 
 ## 1. Preflight 与基线
 
@@ -444,10 +492,9 @@ v2 run 继续使用持久化字节。实现必须保持以下映射：
 ### 4.4 HTML/CSS/JS
 
 - [x] 新建 `src/hacksome/review_ui/index.html`、`styles.css`、`app.js`。
-- [x] 将每个 exact Concept 渲染为独立纵向项目档案卡；卡内按标题/Hook →
-  “体验与 Hook / 软件与 Demo / 分享对象与产物”三块事实 → 折叠原始材料 →
-  本项目回执排列。Desktop 的事实区为三栏，Mobile 为单列；评审问题不得脱离
-  项目卡形成共享区域。
+- [x] 将每个 exact Concept 的说明与回执绑定在同一项目档案卡内。该历史纵向
+  多卡呈现已由 0.4 的单 active card 接力状态模型替代；不得恢复成“先看完整批
+  描述、再集中评审”的页面。
 - [x] 实现 Concept detail、软件核心/Demo/share artifact、反应 chips、自由评论、
   一句话复述、`share_impulse`、分享对象和 `demo_confidence`。
 - [x] 每张卡允许独立跳过；草稿与完成状态按 Concept 隔离，批量提交继续绑定

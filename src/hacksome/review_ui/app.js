@@ -22,10 +22,21 @@ const DEMO_CONFIDENCE_LABELS = {
   maybe: "对 Demo 可行性不确定",
   no: "不相信比赛时间内能跑起来",
 };
+const CARD_DECISION_LABELS = {
+  reject: "不成立",
+  revise: "需要修改",
+  keep: "保留",
+  taste_veto: "Taste veto",
+};
+const CARD_DECISIONS = ["reject", "revise", "keep"];
 
 const state = {
   snapshot: null,
   profile: null,
+  activeConceptRef: null,
+  directoryOpen: false,
+  isTransitioning: false,
+  navigationHistory: [],
   currentPairIndex: 0,
   pairMode: false,
   pairPreference: null,
@@ -188,10 +199,39 @@ function emptyDraft() {
     round_sha256: text(getRound().sha256),
     review_id: randomId(),
     reviewer_name: text(state.profile.reviewer_name),
+    active_concept_ref: "",
     concept_reviews: {},
     pairwise: {},
     overall_comment: "",
   };
+}
+
+function reviewHasDecision(review) {
+  return [...CARD_DECISIONS, "taste_veto"].includes(text(asObject(review).recommendation));
+}
+
+function resolveInitialActiveRef(draft) {
+  const concepts = getConcepts();
+  const refs = new Set(concepts.map(conceptRef));
+  const savedRef = text(asObject(draft).active_concept_ref);
+  if (savedRef && refs.has(savedRef)) {
+    return savedRef;
+  }
+  const reviews = asObject(asObject(draft).concept_reviews);
+  const firstUndecided = concepts.find(
+    (concept) => !reviewHasDecision(reviews[conceptRef(concept)]),
+  );
+  return firstUndecided ? conceptRef(firstUndecided) : conceptRef(concepts[0] || {});
+}
+
+function setActiveConceptRef(ref, { persist = true } = {}) {
+  state.activeConceptRef = ref || null;
+  if (state.draft && !state.staleDraft) {
+    state.draft.active_concept_ref = ref || "";
+    if (persist) {
+      saveDraft();
+    }
+  }
 }
 
 function normalizeConceptDraft(value) {
@@ -215,11 +255,13 @@ function loadDraft() {
   const currentHash = text(getRound().sha256);
   if (!saved.round_sha256) {
     state.draft = emptyDraft();
+    setActiveConceptRef(resolveInitialActiveRef(state.draft), { persist: false });
     return;
   }
   if (saved.round_sha256 !== currentHash) {
     state.draft = saved;
     state.staleDraft = true;
+    state.activeConceptRef = resolveInitialActiveRef(saved);
     byId("stale-warning").hidden = false;
     byId("submit-review").disabled = true;
     return;
@@ -237,6 +279,7 @@ function loadDraft() {
     concept_reviews: conceptReviews,
     pairwise: asObject(saved.pairwise),
   };
+  setActiveConceptRef(resolveInitialActiveRef(state.draft), { persist: false });
 }
 
 function saveDraft() {
@@ -302,17 +345,46 @@ function reviewedConceptCount() {
   return getConcepts().filter(conceptDraftIsComplete).length;
 }
 
+function conceptDecision(concept) {
+  return text(conceptDraft(concept).recommendation, "no_opinion");
+}
+
+function conceptStatusLabel(concept) {
+  const decision = conceptDecision(concept);
+  if (CARD_DECISION_LABELS[decision]) {
+    return CARD_DECISION_LABELS[decision];
+  }
+  return conceptDraftIsComplete(concept) ? "已写复述" : "待判断";
+}
+
+function activeConceptIndex() {
+  const concepts = getConcepts();
+  const index = concepts.findIndex(
+    (concept) => conceptRef(concept) === state.activeConceptRef,
+  );
+  return index >= 0 ? index : concepts.length ? 0 : -1;
+}
+
 function renderConceptList() {
   const list = byId("concept-list");
   list.replaceChildren();
   const concepts = getConcepts();
+  const activeIndex = activeConceptIndex();
+  const isCurator = text(asObject(asObject(state.snapshot).viewer).role) === "curator";
   concepts.forEach((concept, index) => {
     const item = document.createElement("li");
     const button = document.createElement("button");
     button.type = "button";
     button.dataset.index = String(index);
     button.dataset.complete = conceptDraftIsComplete(concept) ? "true" : "false";
-    button.setAttribute("aria-label", `跳到项目 ${index + 1}：${conceptTitle(concept)}`);
+    button.dataset.decision = conceptDecision(concept);
+    button.setAttribute(
+      "aria-label",
+      `跳到项目 ${index + 1}：${conceptTitle(concept)}，${conceptStatusLabel(concept)}`,
+    );
+    if (!isCurator && index === activeIndex) {
+      button.setAttribute("aria-current", "true");
+    }
     button.append(
       makeTextElement(
         "span",
@@ -320,12 +392,17 @@ function renderConceptList() {
         String(index + 1).padStart(2, "0"),
       ),
       makeTextElement("span", "list-title", conceptTitle(concept)),
+      makeTextElement("span", "list-status", conceptStatusLabel(concept)),
     );
     button.addEventListener("click", () => {
-      const card = byId(`concept-card-${index + 1}`);
-      if (card) {
-        card.focus();
+      if (isCurator) {
+        const card = byId(`concept-card-${index + 1}`);
+        if (card) {
+          card.focus();
+        }
+        return;
       }
+      showConceptAt(index, { announce: true, remember: true });
     });
     item.append(button);
     list.append(item);
@@ -434,7 +511,7 @@ function createConceptReviewSection(concept, index) {
     makeTextElement(
       "p",
       "",
-      "写下一句话复述就会把这张卡纳入提交；不想评的项目可以整张跳过。",
+      "先用自己的话复述，再留下建议；最后用卡片底部的三个动作完成判断。",
     ),
   );
   const status = makeTextElement(
@@ -490,29 +567,6 @@ function createConceptReviewSection(concept, index) {
   );
   fields.append(shareWrap);
 
-  const recommendationWrap = document.createElement("div");
-  recommendationWrap.className = "field";
-  const recommendationId = `recommendation-${index + 1}`;
-  const recommendationLabel = document.createElement("label");
-  recommendationLabel.htmlFor = recommendationId;
-  recommendationLabel.textContent = "你希望这个项目接下来怎样？";
-  const recommendation = document.createElement("select");
-  recommendation.id = recommendationId;
-  bindReviewField(recommendation, index, "recommendation");
-  appendSelectOptions(
-    recommendation,
-    [
-      ["no_opinion", "暂不表态"],
-      ["keep", "保留"],
-      ["revise", "修订"],
-      ["reject", "拒绝"],
-      ["taste_veto", "Taste veto"],
-    ],
-    text(draft.recommendation, "no_opinion"),
-  );
-  recommendationWrap.append(recommendationLabel, recommendation);
-  fields.append(recommendationWrap);
-
   if (reviewSchemaVersion() >= 2) {
     const signalGrid = document.createElement("div");
     signalGrid.className = "signal-grid";
@@ -560,23 +614,28 @@ function createConceptReviewSection(concept, index) {
     fields.append(signalGrid);
   }
 
+  const reactionDetails = document.createElement("details");
+  reactionDetails.className = "review-more";
+  const reactionSummary = document.createElement("summary");
+  reactionSummary.textContent = "补充第一反应：惊喜、好玩、神秘或困惑";
   const reactionFieldset = document.createElement("fieldset");
   reactionFieldset.className = "reaction-fieldset";
   const reactionLegend = document.createElement("legend");
-  reactionLegend.textContent = "看完这个项目的第一反应";
+  reactionLegend.textContent = "分别选择你的第一反应";
   reactionFieldset.append(reactionLegend, createReactionGroups(index, draft));
-  fields.append(reactionFieldset);
+  reactionDetails.append(reactionSummary, reactionFieldset);
+  fields.append(reactionDetails);
 
   const commentWrap = document.createElement("div");
   commentWrap.className = "field field-full";
   const commentId = `comment-${index + 1}`;
   const commentLabel = document.createElement("label");
   commentLabel.htmlFor = commentId;
-  commentLabel.textContent = "只针对这个项目的自由评论";
+  commentLabel.textContent = "评价、疑问或具体修改建议";
   const comment = document.createElement("textarea");
   comment.id = commentId;
   comment.maxLength = 4000;
-  comment.rows = 5;
+  comment.rows = 3;
   comment.value = text(draft.comment);
   bindReviewField(comment, index, "comment");
   commentWrap.append(
@@ -586,7 +645,40 @@ function createConceptReviewSection(concept, index) {
   );
   fields.append(commentWrap);
 
-  section.append(fields);
+  const actionError = makeTextElement("p", "card-action-error", "");
+  actionError.id = `card-action-error-${index + 1}`;
+  actionError.hidden = true;
+  actionError.setAttribute("role", "alert");
+
+  const actions = document.createElement("div");
+  actions.className = "card-actions";
+  const later = document.createElement("button");
+  later.type = "button";
+  later.className = "later-action";
+  later.dataset.cardAction = "later";
+  later.dataset.conceptIndex = String(index);
+  later.textContent = "稍后再看";
+  actions.append(later);
+
+  [
+    ["reject", "✕", "不成立"],
+    ["revise", "△", "需要修改"],
+    ["keep", "✓", "保留"],
+  ].forEach(([value, symbol, label]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `decision-action decision-${value}`;
+    button.dataset.cardAction = value;
+    button.dataset.conceptIndex = String(index);
+    button.setAttribute("aria-pressed", text(draft.recommendation) === value ? "true" : "false");
+    button.append(
+      makeTextElement("span", "decision-symbol", symbol),
+      makeTextElement("span", "decision-label", label),
+    );
+    actions.append(button);
+  });
+
+  section.append(fields, actionError, actions);
   return section;
 }
 
@@ -596,6 +688,8 @@ function createConceptReviewCard(concept, index, total) {
   card.className = "project-review-card";
   card.tabIndex = -1;
   card.dataset.conceptIndex = String(index);
+  card.dataset.decision = conceptDecision(concept);
+  card.setAttribute("aria-labelledby", `concept-title-${index + 1}`);
 
   const header = document.createElement("header");
   header.className = "project-file-header";
@@ -611,6 +705,7 @@ function createConceptReviewCard(concept, index, total) {
   heading.className = "project-heading";
   const title = makeTextElement("h2", "", conceptTitle(concept));
   title.id = `concept-title-${index + 1}`;
+  title.tabIndex = -1;
   const hook = fieldText(concept, "hook", "one_sentence_hook", "title");
   const lede =
     hook === conceptTitle(concept)
@@ -635,32 +730,23 @@ function createConceptReviewCard(concept, index, total) {
   const facts = document.createElement("div");
   facts.className = "project-facts";
 
-  const experience = createFactPanel("体验与 Hook");
-  const trace = document.createElement("div");
-  trace.className = "experience-trace";
-  trace.append(
-    createExperienceStep(
-      "先看到",
-      fieldText(concept, "first_impression", "first_thirty_seconds"),
-      "setup",
-    ),
-    createExperienceStep(
-      "观众做什么",
-      fieldText(concept, "audience_action", "action"),
+  const experience = createFactPanel("用户做什么");
+  appendFactCopy(
+    experience,
+    "真实输入与动作",
+    fieldText(
+      concept,
+      "audience_action",
       "action",
-    ),
-    createExperienceStep(
-      "Reveal / 余韵",
-      fieldText(concept, "reveal", "setup_reveal_aftertaste"),
-      "reveal",
+      "first_thirty_seconds",
+      "hook",
     ),
   );
-  experience.append(trace);
 
-  const software = createFactPanel("软件 / Demo");
+  const software = createFactPanel("软件如何回应");
   appendFactCopy(
     software,
-    "软件核心与运行入口",
+    "可观察的核心转换",
     fieldText(
       concept,
       "software_core_and_runtime",
@@ -668,26 +754,16 @@ function createConceptReviewCard(concept, index, total) {
       "mechanism",
     ),
   );
-  appendFactCopy(
-    software,
-    "最小 Hackathon Demo",
-    fieldText(concept, "minimum_hackathon_demo", "minimum_demo"),
-  );
 
-  const share = createFactPanel("分享对象 / 产物");
+  const share = createFactPanel("为何会再试 / 分享");
   appendFactCopy(
     share,
-    "分享触发与可转发物",
+    "重复循环与可转发物",
     fieldText(
       concept,
       "share_trigger_and_artifact",
       "why_someone_may_share_it",
     ),
-  );
-  appendFactCopy(
-    share,
-    "一句话 Hook",
-    fieldText(concept, "hook", "one_sentence_hook", "title"),
   );
   facts.append(experience, software, share);
   card.append(facts);
@@ -700,8 +776,31 @@ function createConceptReviewCard(concept, index, total) {
   detailGrid.className = "source-detail-grid";
   [
     [
-      "真实输入与转换",
-      fieldText(concept, "core_mechanism", "mechanism"),
+      "体验路径与 Reveal",
+      [
+        fieldText(concept, "first_impression", "first_thirty_seconds"),
+        fieldText(concept, "reveal", "setup_reveal_aftertaste"),
+      ].join("\n\n"),
+    ],
+    [
+      "软件核心与运行入口 / 最小 Demo",
+      [
+        fieldText(
+          concept,
+          "software_core_and_runtime",
+          "core_mechanism",
+          "mechanism",
+        ),
+        fieldText(concept, "minimum_hackathon_demo", "minimum_demo"),
+      ].join("\n\n"),
+    ],
+    [
+      "分享触发与可转发物",
+      fieldText(
+        concept,
+        "share_trigger_and_artifact",
+        "why_someone_may_share_it",
+      ),
     ],
     [
       "先例与差异",
@@ -720,7 +819,11 @@ function createConceptReviewCard(concept, index, total) {
     detailGrid.append(section);
   });
   details.append(summary, detailGrid);
-  card.append(details, createConceptReviewSection(concept, index));
+  card.append(details);
+  const isCurator = text(asObject(asObject(state.snapshot).viewer).role) === "curator";
+  if (!isCurator) {
+    card.append(createConceptReviewSection(concept, index));
+  }
   return card;
 }
 
@@ -728,9 +831,210 @@ function renderConceptCards() {
   const target = byId("concept-review-cards");
   target.replaceChildren();
   const concepts = getConcepts();
-  concepts.forEach((concept, index) => {
-    target.append(createConceptReviewCard(concept, index, concepts.length));
+  const isCurator = text(asObject(asObject(state.snapshot).viewer).role) === "curator";
+  if (isCurator) {
+    concepts.forEach((concept, index) => {
+      target.append(createConceptReviewCard(concept, index, concepts.length));
+    });
+    return;
+  }
+  let index = activeConceptIndex();
+  if (index < 0 && concepts.length) {
+    index = 0;
+    setActiveConceptRef(conceptRef(concepts[0]), { persist: false });
+  }
+  const concept = concepts[index];
+  if (concept) {
+    const card = createConceptReviewCard(concept, index, concepts.length);
+    card.classList.add("is-active");
+    target.append(card);
+  }
+}
+
+function setDirectoryOpen(open, { focus = false } = {}) {
+  state.directoryOpen = Boolean(open);
+  const index = byId("concept-index");
+  const toggle = byId("toggle-concept-directory");
+  const isCurator = text(asObject(asObject(state.snapshot).viewer).role) === "curator";
+  index.hidden = isCurator ? !getConcepts().length || state.pairMode : !state.directoryOpen;
+  toggle.setAttribute("aria-expanded", state.directoryOpen ? "true" : "false");
+  if (focus && state.directoryOpen) {
+    const active = byId("concept-list").querySelector('[aria-current="true"]');
+    const first = byId("concept-list").querySelector("button");
+    (active || first || byId("close-concept-directory")).focus();
+  }
+}
+
+function renderActiveCardMeta() {
+  const concepts = getConcepts();
+  const index = activeConceptIndex();
+  const concept = concepts[index];
+  byId("active-concept-position").textContent = concept
+    ? `${String(index + 1).padStart(2, "0")} / ${String(concepts.length).padStart(2, "0")}`
+    : "00 / 00";
+  byId("active-concept-status").textContent = concept
+    ? conceptStatusLabel(concept)
+    : "等待项目";
+  byId("previous-concept").disabled =
+    !concept || (index <= 0 && !state.navigationHistory.length);
+  setDirectoryOpen(state.directoryOpen);
+}
+
+function focusActiveConcept() {
+  const index = activeConceptIndex();
+  const title = byId(`concept-title-${index + 1}`);
+  if (title) {
+    title.focus();
+  }
+}
+
+function announceActiveConcept() {
+  const concepts = getConcepts();
+  const index = activeConceptIndex();
+  const concept = concepts[index];
+  if (!concept) {
+    return;
+  }
+  byId("relay-announcer").textContent =
+    `第 ${index + 1} 张，共 ${concepts.length} 张：${conceptTitle(concept)}。${
+      conceptStatusLabel(concept)
+    }。`;
+}
+
+function renderReviewerDeck({ focus = false, announce = false } = {}) {
+  renderConceptCards();
+  renderConceptList();
+  renderRoundMeta();
+  renderActiveCardMeta();
+  updateAllCounts();
+  if (announce) {
+    announceActiveConcept();
+  }
+  if (focus) {
+    globalThis.requestAnimationFrame(focusActiveConcept);
+  }
+}
+
+function showConceptAt(index, { announce = false, remember = false } = {}) {
+  const concepts = getConcepts();
+  if (
+    state.isTransitioning ||
+    index < 0 ||
+    index >= concepts.length ||
+    text(asObject(asObject(state.snapshot).viewer).role) === "curator"
+  ) {
+    return;
+  }
+  syncConceptReviewFields();
+  const currentRef = state.activeConceptRef;
+  const nextRef = conceptRef(concepts[index]);
+  if (remember && currentRef && currentRef !== nextRef) {
+    state.navigationHistory.push(currentRef);
+  }
+  setActiveConceptRef(nextRef);
+  state.directoryOpen = false;
+  renderReviewerDeck({ focus: true, announce });
+}
+
+function previousConcept() {
+  const concepts = getConcepts();
+  if (!concepts.length || state.isTransitioning) {
+    return;
+  }
+  const fromHistory = state.navigationHistory.pop();
+  if (fromHistory) {
+    const historyIndex = concepts.findIndex(
+      (concept) => conceptRef(concept) === fromHistory,
+    );
+    if (historyIndex >= 0) {
+      showConceptAt(historyIndex, { announce: true, remember: false });
+      return;
+    }
+  }
+  const index = activeConceptIndex();
+  if (index > 0) {
+    showConceptAt(index - 1, { announce: true, remember: false });
+  }
+}
+
+function nextSequentialIndex(index) {
+  const count = getConcepts().length;
+  if (count < 2) {
+    return index;
+  }
+  return (index + 1) % count;
+}
+
+function nextUndecidedIndex(index) {
+  const concepts = getConcepts();
+  for (let offset = 1; offset <= concepts.length; offset += 1) {
+    const candidateIndex = (index + offset) % concepts.length;
+    if (!reviewHasDecision(conceptDraft(concepts[candidateIndex]))) {
+      return candidateIndex;
+    }
+  }
+  return -1;
+}
+
+function finishCardAction(action) {
+  if (state.isTransitioning || state.staleDraft) {
+    return;
+  }
+  const index = activeConceptIndex();
+  const concept = getConcepts()[index];
+  if (!concept) {
+    return;
+  }
+  syncConceptReviewFields();
+  const draft = conceptDraft(concept);
+  const error = byId(`card-action-error-${index + 1}`);
+  if (action !== "later" && !text(draft.one_sentence_retell).trim()) {
+    error.textContent = "先用一句话复述这个项目，再完成判断。";
+    error.hidden = false;
+    byId(`retell-${index + 1}`).focus();
+    setPageState("这张卡还缺一句话复述。", "error");
+    return;
+  }
+  error.hidden = true;
+  if (CARD_DECISIONS.includes(action)) {
+    draft.recommendation = action;
+    saveDraft();
+  }
+
+  const card = byId(`concept-card-${index + 1}`);
+  state.isTransitioning = true;
+  card.dataset.exit = action;
+  card.classList.add("is-leaving");
+  card.querySelectorAll("button, input, select, textarea").forEach((control) => {
+    control.disabled = true;
   });
+
+  const reducedMotion = globalThis.matchMedia(
+    "(prefers-reduced-motion: reduce)",
+  ).matches;
+  globalThis.setTimeout(() => {
+    state.isTransitioning = false;
+    const nextIndex =
+      action === "later" ? nextSequentialIndex(index) : nextUndecidedIndex(index);
+    if (nextIndex >= 0 && (nextIndex !== index || getConcepts().length > 1)) {
+      showConceptAt(nextIndex, { announce: true, remember: true });
+      setPageState(
+        action === "later"
+          ? "这张卡已留在草稿里，先接下一张。"
+          : `${conceptTitle(concept)} 已标记为“${CARD_DECISION_LABELS[action]}”；可以随时返回修改。`,
+        "success",
+      );
+      return;
+    }
+    renderReviewerDeck({ focus: false, announce: true });
+    if (action === "later") {
+      setPageState("本轮只有这一张卡；可以继续填写或直接提交已有回执。");
+      focusActiveConcept();
+      return;
+    }
+    setPageState("所有项目都已有判断；可以回看修改，或提交整批回执。", "success");
+    byId("submit-review").focus();
+  }, reducedMotion ? 0 : 430);
 }
 
 function syncConceptReviewFields() {
@@ -800,8 +1104,14 @@ function updateConceptReviewStatus(index) {
   const indexButton = byId("concept-list").querySelector(`[data-index="${index}"]`);
   if (indexButton) {
     indexButton.dataset.complete = complete ? "true" : "false";
+    indexButton.dataset.decision = conceptDecision(concept);
+    const listStatus = indexButton.querySelector(".list-status");
+    if (listStatus) {
+      listStatus.textContent = conceptStatusLabel(concept);
+    }
   }
   renderRoundMeta();
+  renderActiveCardMeta();
 }
 
 function renderRoundMeta() {
@@ -1312,9 +1622,16 @@ function renderResolutionActions(curation) {
 function render() {
   const concepts = getConcepts();
   const isCurator = text(asObject(asObject(state.snapshot).viewer).role) === "curator";
+  if (
+    concepts.length &&
+    !concepts.some((concept) => conceptRef(concept) === state.activeConceptRef)
+  ) {
+    setActiveConceptRef(resolveInitialActiveRef(state.draft), { persist: false });
+  }
   document.body.classList.toggle("is-curator", isCurator);
-  byId("concept-index").hidden = !concepts.length || state.pairMode;
   byId("review-form").hidden = !concepts.length || state.pairMode;
+  byId("relay-controller").hidden = isCurator;
+  byId("active-concept-stage").classList.toggle("is-curator-deck", isCurator);
   if (!concepts.length) {
     setPageState("本轮没有待审候选；工作流会直接进入零 Idea 报告。");
   } else {
@@ -1323,12 +1640,14 @@ function render() {
         ? "Pairwise 完全可选；跳过不会被解释为平局或拒绝。"
         : isCurator
           ? "策展模式会显示完整机器证据；候选档案仍保留原始项目上下文。"
-          : "每张项目档案的下半部只评这一个 Concept；可跳过其他卡。",
+          : "当前卡的描述与回执属于同一个项目；判断后会接到下一张。",
     );
   }
   renderConceptCards();
   renderRoundMeta();
   renderConceptList();
+  renderActiveCardMeta();
+  setDirectoryOpen(isCurator ? true : state.directoryOpen);
   renderPairMode();
   restoreForm();
   renderTeamWall();
@@ -1357,10 +1676,15 @@ function buildReviewPayload() {
     const index = getConcepts().findIndex(
       (concept) => conceptRef(concept) === immediateWithoutTarget.concept_ref,
     );
-    const input = byId(`share-target-${index + 1}`);
-    if (input) {
-      input.focus();
+    if (index >= 0 && index !== activeConceptIndex()) {
+      showConceptAt(index, { announce: true, remember: true });
     }
+    globalThis.requestAnimationFrame(() => {
+      const input = byId(`share-target-${index + 1}`);
+      if (input) {
+        input.focus();
+      }
+    });
     throw new Error("选择“会立刻发”时，请在对应项目卡里填写具体分享对象。");
   }
   const pairwise = Object.values(asObject(state.draft.pairwise)).filter((pair) =>
@@ -1609,6 +1933,11 @@ function bindInputPersistence() {
   cards.addEventListener("input", persistConceptField);
   cards.addEventListener("change", persistConceptField);
   cards.addEventListener("click", (event) => {
+    const actionButton = event.target.closest("[data-card-action]");
+    if (actionButton) {
+      finishCardAction(actionButton.dataset.cardAction);
+      return;
+    }
     const button = event.target.closest(".reaction-chip");
     if (!button || state.staleDraft) {
       return;
@@ -1659,6 +1988,14 @@ function bindInputPersistence() {
 function bindEvents() {
   byId("review-form").addEventListener("submit", submitReview);
   byId("resolution-form").addEventListener("submit", submitResolution);
+  byId("previous-concept").addEventListener("click", previousConcept);
+  byId("toggle-concept-directory").addEventListener("click", () => {
+    setDirectoryOpen(!state.directoryOpen, { focus: !state.directoryOpen });
+  });
+  byId("close-concept-directory").addEventListener("click", () => {
+    setDirectoryOpen(false);
+    byId("toggle-concept-directory").focus();
+  });
   byId("pair-mode-button").addEventListener("click", () => {
     if (!getPairs().length) {
       setPageState("本轮候选不足，或没有安排 pair；可以直接提交单项评审。");
@@ -1682,6 +2019,8 @@ function bindEvents() {
   byId("discard-stale-draft").addEventListener("click", () => {
     state.staleDraft = false;
     state.draft = emptyDraft();
+    state.navigationHistory = [];
+    setActiveConceptRef(resolveInitialActiveRef(state.draft), { persist: false });
     safeRemoveStorage(DRAFT_KEY);
     byId("stale-warning").hidden = true;
     byId("submit-review").disabled = false;
@@ -1693,10 +2032,34 @@ function bindEvents() {
     state.draft.review_id = randomId();
     state.submittedReviewId = previous;
     state.editingAfterReveal = true;
+    state.navigationHistory = [];
+    setActiveConceptRef(resolveInitialActiveRef(state.draft), { persist: false });
     render();
-    const firstRetell = byId("retell-1");
-    if (firstRetell) {
-      firstRetell.focus();
+    const index = activeConceptIndex();
+    const retell = byId(`retell-${index + 1}`);
+    (retell || byId("active-concept-stage")).focus();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.directoryOpen) {
+      event.preventDefault();
+      setDirectoryOpen(false);
+      byId("toggle-concept-directory").focus();
+      return;
+    }
+    const target = event.target;
+    const isEditing =
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement;
+    if (isEditing || !event.altKey || state.pairMode) {
+      return;
+    }
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      previousConcept();
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      finishCardAction("later");
     }
   });
   bindInputPersistence();
